@@ -11,7 +11,7 @@
 // Custom libs
 #Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
 #Include "Libs/domino54/Translations.Script.txt" as Translations
-#Include "Libs/domino54/UpdateChecker.Script.txt" as UpdateChecker
+
 
 // ---------------------------------- //
 // Settings
@@ -72,19 +72,6 @@ MB_LogVersion(ScriptName, Version);
 ***
 
 // ---------------------------------- //
-// Update Checker
-// ---------------------------------- //
-***UpdateChecker***
-***
-UpdateChecker::SetAndLogScriptVersions([
-	ScriptName => Version,
-	SentenceBank::GetScriptName() => SentenceBank::GetScriptVersion(),
-	Translations::GetScriptName() => Translations::GetScriptVersion(),
-	UpdateChecker::GetScriptName() => UpdateChecker::GetScriptVersion()
-]);
-***
-
-// ---------------------------------- //
 // Start server
 // ---------------------------------- //
 ***StartServer***
@@ -134,9 +121,6 @@ ST2::CreateCol("KO_Time", _("Time"), "", 7., 90.);
 MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
 ST2::Build("TM");
 
-// Check available updates
-UpdateChecker::Load();
-+++UpdateChecker+++
 ***
 
 // ---------------------------------- //
@@ -169,7 +153,6 @@ foreach (Score in Scores) Score.BestRace = Null;
 ***StartMap***
 ***
 UpdatePlayerColors();
-UpdateChecker::CheckUpdate();
 
 // ---------------------------------- //
 // Wait for enough players
@@ -572,7 +555,6 @@ else {
 // ---------------------------------- //
 ***EndServer***
 ***
-UpdateChecker::Unload();
 Layers::Detach("Custom");
 Layers::Destroy("Custom");
 
