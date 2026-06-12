@@ -6,6 +6,9 @@ All ManiaScript libraries written by Dommy for ManiaPlanet gaming system. Files 
 ## Useful links
 
 * [ManiaPlanet - platform for TrackMania² and ShootMania games by Nadeo](http://maniaplanet.com/)
+* [ManiaPark - Find car models, car skins, texture mods and other community content.](https://maniapark.com/)
+* [TM Exchange - Find tracks, replays and community content.](hhttps://tm.mania.exchange/)
+* [PyPlanet -  A Maniaplanet/Trackmania Dedicated Server Controller](https://pypla.net/en/latest/index.html)
 
 ## Knockout mode with PyPlanet
 
