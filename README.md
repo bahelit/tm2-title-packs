@@ -45,9 +45,14 @@ settings:
 
 ### Step 2: Update the playlist XML
 
-Add Knockout settings to your map XML `<script_settings>` section. Remove `S_UseLegacyXmlRpcCallbacks` so PyPlanet controls callback format:
+In your map playlist XML (`playlist.ini` or `.xml`), set the script name and add Knockout settings. Remove `S_UseLegacyXmlRpcCallbacks` so PyPlanet controls callback format:
 
 ```xml
+<gameinfos>
+  <game_mode>0</game_mode>
+  <script_name><![CDATA[Modes/TrackMania/Knockout.Script.txt]]></script_name>
+</gameinfos>
+
 <script_settings>
   <setting name="S_RoundsPerMap" type="integer" value="0"/>
   <setting name="S_DoubleKnockUntil" type="integer" value="20"/>
