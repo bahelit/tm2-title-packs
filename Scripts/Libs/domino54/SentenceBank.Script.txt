@@ -1,6 +1,6 @@
 // ---------------------------------------------------- //
 //  LIBRARY SENTENCE BANK by domino54 and The Community //
-//  script version: 2016-12-09                          //
+//  script version: 2026-06-11                          //
 // ---------------------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	Sparkster, TheBigG., TheBigMiike, TMarc, tombuilder, Woolookologie, Zeraxex
  */
 
-#Const Version		"2016-12-09"
+#Const Version		"2026-06-11"
 #Const ScriptName	"SentenceBank.Script.txt"
 
 // ---------------------------------- //
