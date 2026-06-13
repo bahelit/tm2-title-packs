@@ -10,7 +10,7 @@ class CupMatch(TimedModel):
 	`counts` lets an admin include/exclude a map from the cup totals.
 	"""
 
-	cup = ForeignKeyField(CupInfo, null=False, index=True, backref='matches', on_delete='CASCADE')
+	cup = ForeignKeyField(CupInfo, null=False, index=True, related_name='matches', on_delete='CASCADE')
 	"""The cup this match belongs to."""
 
 	map_start_time = IntegerField(null=False, index=True)
