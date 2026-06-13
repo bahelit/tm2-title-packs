@@ -1,6 +1,7 @@
 import logging
 
 from pyplanet.apps.core.maniaplanet import callbacks as mp_signals
+from pyplanet.apps.core.trackmania import callbacks as tm_signals
 from pyplanet.core.events import Callback
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,14 @@ class LiveController:
 		self.phase = 'idle'
 		self.round = 0
 		self.total_rounds = 0
+		# Best lap time (ms) seen per login on the current map, from the finish
+		# callback. Populated during warm-up too, so the HUD can show times before
+		# any KO round data arrives. Reset each map.
+		self.best_times = {}
+		# Whether the current mode script is a Knockout mode. The HUD is always-on
+		# during Knockout but should not appear in other modes; default True so it
+		# shows until the first map_start tells us otherwise.
+		self.is_knockout = True
 		self._double_until = 0
 		self._order_signal = None
 		self._round_signal = None
@@ -153,6 +162,15 @@ class LiveController:
 			self.app.context.signals.register_signal(cb)
 			self.app.context.signals.listen('script:{}'.format(code), handler)
 
+		# Best-lap tracking for the HUD's times column. The finish callback fires
+		# during warm-up as well as scored rounds, so the HUD has times to show
+		# before the KO round callbacks start arriving.
+		self.app.context.signals.listen(tm_signals.finish, self.on_finish)
+
+		# Keep the warm-up roster current as players come and go.
+		self.app.context.signals.listen(mp_signals.player.player_connect, self.on_roster_change)
+		self.app.context.signals.listen(mp_signals.player.player_disconnect, self.on_roster_change)
+
 		# Reset the live picture whenever a new map (and so a new match) starts.
 		self.app.context.signals.listen(mp_signals.map.map_start, self.on_map_start)
 
@@ -164,6 +182,9 @@ class LiveController:
 		self.phase = 'idle'
 		self.round = 0
 		self.total_rounds = 0
+		self.best_times = {}
+		# Only show the HUD while a Knockout mode is loaded.
+		self.is_knockout = await self._read_is_knockout()
 		# Cache the double-knockout threshold so danger highlighting matches how
 		# many players the mode will actually knock out this round.
 		self._double_until = await self._read_double_until()
@@ -185,6 +206,61 @@ class LiveController:
 			return int(settings.get('S_DoubleKnockUntil', 0) or 0)
 		except (TypeError, ValueError):
 			return 0
+
+	async def _read_is_knockout(self):
+		try:
+			script = await self.instance.mode_manager.get_current_script()
+		except Exception:
+			return True  # can't tell -> leave the HUD enabled
+		return 'knockout' in (script or '').lower()
+
+	# --------------------------------------------------- best-lap / roster
+
+	async def on_finish(self, player=None, race_time=None, **kwargs):
+		"""Track each player's best lap this map so the HUD can show times during
+		warm-up (and as a fallback before KORoundOrder carries them)."""
+		login = getattr(player, 'login', None) or (str(player) if player else '')
+		if not login:
+			return
+		try:
+			ms = int(race_time)
+		except (TypeError, ValueError):
+			return
+		if ms <= 0:
+			return
+		best = self.best_times.get(login)
+		if best is None or ms < best:
+			self.best_times[login] = ms
+			await self._refresh_overlays()
+
+	async def on_roster_change(self, *args, **kwargs):
+		"""A player connected/disconnected; repaint the warm-up roster."""
+		await self._refresh_overlays()
+
+	def best_time(self, login):
+		"""Best lap (ms) recorded for ``login`` this map, or -1 if none yet."""
+		return self.best_times.get(login, -1)
+
+	async def roster_logins(self):
+		"""Logins to list on the HUD. During a live round this is the racing set;
+		before that (warm-up) it is the players currently on the server, so the HUD
+		is populated even with no round data yet. Pure spectators are excluded."""
+		if self.racing:
+			return list(self.racing)
+		try:
+			online = self.instance.player_manager.online
+		except Exception:
+			return []
+		logins = []
+		for entry in online:
+			login = getattr(entry, 'login', None)
+			if not login:
+				continue
+			flow = getattr(entry, 'flow', None)
+			if flow is not None and getattr(flow, 'is_spectator', False):
+				continue
+			logins.append(login)
+		return logins
 
 	# ------------------------------------------------- routed from app handlers
 

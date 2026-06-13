@@ -36,37 +36,54 @@ class MatchHud(TemplateView):
 		return data
 
 	async def refresh(self, live):
-		"""Pull the current picture from the LiveController and (re)display, or
-		hide the HUD when no match is being raced."""
-		if live.phase in ('idle', 'ended') or live.count <= 0:
+		"""Pull the current picture from the LiveController and (re)display. The HUD
+		stays up for the whole Knockout: during warm-up it lists the players on the
+		server with their best lap so far; once rounds start it switches to the live
+		running order with elimination highlighting. It only hides when the loaded
+		mode is not Knockout, or when nobody is on the server to show."""
+		if not getattr(live, 'is_knockout', True):
 			await self.hide()
 			return
 
 		self.round_text = round_label(getattr(live, 'round', 0), getattr(live, 'total_rounds', 0))
-		self.count = live.count
 		self.danger_count = live.danger_count
-
 		danger = set(live.danger_logins())
-		# Prefer the live running order; before the first KORoundOrder arrives,
-		# fall back to the racing set so the HUD still lists who is in.
-		order = live.order or [
-			dict(login=login, rank=index + 1, time=-1, finished=False)
-			for index, login in enumerate(live.racing)
-		]
 
 		rows = []
-		for entry in order:
-			login = entry.get('login')
-			if not login or login not in live.racing:
-				continue
+
+		async def add(rank, login, time_ms, finished):
 			rows.append(dict(
 				y=-12 - len(rows) * 4,
-				rank=entry.get('rank', len(rows) + 1),
+				rank=rank,
 				name=await self._name(login),
-				time=format_race_time(entry.get('time', -1)),
-				color=row_color(login in danger, entry.get('finished', False)),
+				time=format_race_time(time_ms),
+				color=row_color(login in danger, finished),
 			))
+
+		if live.order:
+			# Live round order carries live times and finished flags.
+			for entry in live.order:
+				login = entry.get('login')
+				if not login or login not in live.racing:
+					continue
+				await add(entry.get('rank', len(rows) + 1), login,
+					entry.get('time', -1), entry.get('finished', False))
+		else:
+			# Warm-up / pre-round: roster from the server, best lap so far, fastest
+			# first (players without a lap yet sort to the bottom).
+			logins = await live.roster_logins()
+			logins.sort(key=lambda lg: (live.best_time(lg) < 0, live.best_time(lg)))
+			for login in logins:
+				await add(len(rows) + 1, login, live.best_time(login), False)
+
 		self.rows = rows
+		# "alive" reflects the racing count once a round is on; in warm-up it is the
+		# number of players currently listed.
+		self.count = live.count if live.racing else len(rows)
+
+		if not rows:
+			await self.hide()
+			return
 		await self.display()
 
 	async def _name(self, login):
