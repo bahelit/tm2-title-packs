@@ -75,3 +75,19 @@ class MatchHud(TemplateView):
 			return player.nickname
 		except Exception:
 			return login
+
+	async def show_test(self, player=None):
+		"""Force-render the HUD with placeholder rows, ignoring match state. Used
+		by the //ko hud diagnostic to confirm the manialink renders at all. Shown
+		only to ``player`` when given, otherwise to everyone (the real path)."""
+		self.round_text = 'ROUND 1 / 5'
+		self.count = 2
+		self.danger_count = 1
+		self.rows = [
+			dict(y=-12, rank=1, name='Test A', time='0.000', color='66FF66'),
+			dict(y=-16, rank=2, name='Test B', time='—', color='FF3333'),
+		]
+		if player is not None:
+			await self.display(player=player)
+		else:
+			await self.display()
