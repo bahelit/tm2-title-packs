@@ -85,6 +85,13 @@ class CupController:
 
 	# ------------------------------------------------------------------ matches
 
+	async def last_cup(self):
+		"""Return the most recently created cup (active or not), or None."""
+		rows = list(await CupInfo.execute(
+			CupInfo.select().order_by(CupInfo.id.desc())
+		))
+		return rows[0] if rows else None
+
 	async def cup_matches(self, cup=None):
 		"""Return the CupMatch rows for a cup, ordered by map index."""
 		cup = cup or self.active_cup

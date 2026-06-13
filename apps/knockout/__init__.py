@@ -7,6 +7,8 @@ from .capture import CaptureController
 from .cup import CupController
 from .commands import CupCommands
 from .results import ResultsController
+from .config import PresetConfig
+from . import score_modes
 from .models import MatchInfo, PlayerScore, CupInfo, CupMatch  # noqa: F401  (registers tables)
 
 
@@ -67,6 +69,30 @@ class KnockoutConfig(AppConfig):
 			description='Notify when a match winner is determined',
 			default=True,
 		)
+		self.setting_cup_presets_path = Setting(
+			'cup_presets_path',
+			'Cup Presets File',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Path to the cup presets JSON file (names/presets/payouts)',
+			default='',
+		)
+		self.setting_default_score_mode = Setting(
+			'cup_default_score_mode',
+			'Default Cup Score Mode',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Score mode used for new cups: {}'.format(', '.join(score_modes.mode_names())),
+			default=score_modes.DEFAULT_MODE,
+		)
+		self.setting_payouts_enabled = Setting(
+			'cup_payouts_enabled',
+			'Enable Cup Planet Payouts',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Allow //cup pay to send real planets to cup winners',
+			default=False,
+		)
 
 	async def on_init(self):
 		await self.context.setting.register(
@@ -74,6 +100,9 @@ class KnockoutConfig(AppConfig):
 			self.setting_show_join,
 			self.setting_show_knockout,
 			self.setting_show_winner,
+			self.setting_cup_presets_path,
+			self.setting_default_score_mode,
+			self.setting_payouts_enabled,
 		)
 
 	async def on_start(self):
@@ -82,6 +111,11 @@ class KnockoutConfig(AppConfig):
 			self.context.signals.listen('script:{}'.format(cb.code), self.handle_knockout_callback)
 
 		self._match_winner = None
+
+		# Cup presets (names / mode presets / payouts) from the configured file.
+		presets_path = await self.setting_cup_presets_path.get_value()
+		self.presets = PresetConfig(presets_path or None)
+		self.presets.load()
 
 		# Cup controllers: state machine, score capture, and commands.
 		self.cup = CupController(self)
