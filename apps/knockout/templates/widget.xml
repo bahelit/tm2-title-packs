@@ -4,9 +4,9 @@
 	<label pos="2. -2." size="42. 4." halign="left" valign="top"
 		textsize="1" textcolor="FFCC00" text="{{ title }}" />
 	{% for row in rows %}
-	<label pos="2. {{ -7. - loop.index0 * 4. }}." size="32. 3.5." halign="left" valign="top"
+	<label pos="2. {{ row.y }}" size="32. 3.5." halign="left" valign="top"
 		textsize="1" text="{{ row.rank }}. {{ row.nickname }}" />
-	<label pos="44. {{ -7. - loop.index0 * 4. }}." size="8. 3.5." halign="right" valign="top"
+	<label pos="44. {{ row.y }}" size="8. 3.5." halign="right" valign="top"
 		textsize="1" textcolor="FFFFFF" text="{{ row.points }}" />
 	{% endfor %}
 </frame>

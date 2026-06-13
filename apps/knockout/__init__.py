@@ -11,7 +11,7 @@ from .season import SeasonController
 from .live import LiveController
 from .markers import MarkersController
 from .config import PresetConfig
-from .views import CupWidget, CupTicker, CupLowerThird
+from .views import CupWidget, CupTicker, CupLowerThird, MatchHud
 from . import score_modes
 from .models import MatchInfo, PlayerScore, CupInfo, CupMatch  # noqa: F401  (registers tables)
 
@@ -112,6 +112,7 @@ class KnockoutConfig(AppConfig):
 			type=bool,
 			description='Show a live standings widget during an active cup (experimental)',
 			default=False,
+			change_target=self._on_display_setting_changed,
 		)
 		self.setting_show_overlays = Setting(
 			'show_overlays',
@@ -120,6 +121,16 @@ class KnockoutConfig(AppConfig):
 			type=bool,
 			description='Show the live players-remaining ticker and elimination lower-third (for streams)',
 			default=False,
+			change_target=self._on_display_setting_changed,
+		)
+		self.setting_show_match_hud = Setting(
+			'show_match_hud',
+			'Show Live Match HUD',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Show the always-on left-side match HUD (round, players alive, KOs/round, times) to everyone',
+			default=True,
+			change_target=self._on_display_setting_changed,
 		)
 		self.setting_vod_markers_enabled = Setting(
 			'vod_markers_enabled',
@@ -150,6 +161,7 @@ class KnockoutConfig(AppConfig):
 			self.setting_cup_export_path,
 			self.setting_show_cup_widget,
 			self.setting_show_overlays,
+			self.setting_show_match_hud,
 			self.setting_vod_markers_enabled,
 			self.setting_vod_markers_path,
 		)
@@ -184,6 +196,11 @@ class KnockoutConfig(AppConfig):
 		self._overlays_enabled = await self.setting_show_overlays.get_value()
 		self.ticker = CupTicker(self)
 		self.lower_third = CupLowerThird(self)
+
+		# Always-on left-side match HUD shown to players and spectators (on by
+		# default). Driven by the LiveController alongside the broadcast overlays.
+		self._match_hud_enabled = await self.setting_show_match_hud.get_value()
+		self.hud = MatchHud(self)
 
 		# Live match state drives the overlays and marker events.
 		self.live = LiveController(self)
@@ -222,6 +239,39 @@ class KnockoutConfig(AppConfig):
 	async def hide_widget(self):
 		try:
 			await self.widget.hide()
+		except Exception:
+			pass
+
+	async def _on_display_setting_changed(self, *args, **kwargs):
+		"""
+		Re-read the cached display flags when show_overlays / show_match_hud /
+		show_cup_widget are toggled at runtime (via //settings), so the change
+		takes effect immediately instead of needing an app reload.
+		"""
+		self._overlays_enabled = await self.setting_show_overlays.get_value()
+		self._match_hud_enabled = await self.setting_show_match_hud.get_value()
+		self._show_widget = await self.setting_show_cup_widget.get_value()
+
+		# Hide whatever was just turned off (a disabled view is skipped by
+		# _refresh_overlays, so it would otherwise linger on screen).
+		if not self._overlays_enabled:
+			await self._hide_view(getattr(self, 'ticker', None))
+			await self._hide_view(getattr(self, 'lower_third', None))
+		if not self._match_hud_enabled:
+			await self._hide_view(getattr(self, 'hud', None))
+
+		# Repaint the still-enabled overlays from the live match state, and let
+		# update_widget show/hide the cup widget per its own flag + active cup.
+		live = getattr(self, 'live', None)
+		if live is not None:
+			await live._refresh_overlays()
+		await self.update_widget()
+
+	async def _hide_view(self, view):
+		if view is None:
+			return
+		try:
+			await view.hide()
 		except Exception:
 			pass
 
