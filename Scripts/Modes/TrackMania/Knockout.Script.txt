@@ -5,7 +5,7 @@
 
 #Extends "Modes/TrackMania/RoundsBase.Script.txt"
 
-#Const Version		"2026-06-12"
+#Const Version		"2026-06-13"
 #Const ScriptName	"Knockout.Script.txt"
 
 // Custom libs
@@ -367,19 +367,24 @@ PlayersNbDoubled = 0;
 
 if (HighestLapsNb - LowestLapsNb >= 2) {
 	foreach (Player in Players) {
-		// Knock doubled player
-		if (Player.CurrentNbLaps == LowestLapsNb && IsRacing(Player.User)) {
+		// Knock doubled player (never knock the last racer)
+		if (Player.CurrentNbLaps == LowestLapsNb && IsRacing(Player.User) && GetRacingPlayersAmount() > 1) {
 			KnockoutPlayer(Player, False);
 			Translations::SendChat(["$<%1$> knocked out, doubled by $<%2$>!", Player.User.Name, Event.Player.User.Name]);
 			PlayersNbDoubled += 1;
 		}
 	}
 }
-if (LapPlayersNbDoubled.count < Event.Player.CurrentNbLaps) LapPlayersNbDoubled.add(PlayersNbDoubled);
+// Record doubled count for this lap. Pad the list (while, not if) so its index
+// always lines up with the finishing player's lap, even if a lap was skipped
+// between events -- otherwise the lookup below can go out of bounds.
+while (LapPlayersNbDoubled.count < Event.Player.CurrentNbLaps) LapPlayersNbDoubled.add(PlayersNbDoubled);
 
 // ---------------------------------- //
-// Knock last player if nobody was doubled
-if (LapPlayersNbDoubled[Event.Player.CurrentNbLaps-1] == 0) {
+// Knock last player if nobody was doubled on this lap
+declare Integer LapIndex;
+LapIndex = Event.Player.CurrentNbLaps - 1;
+if (LapIndex >= 0 && LapPlayersNbDoubled.existskey(LapIndex) && LapPlayersNbDoubled[LapIndex] == 0) {
 	// ---------------------------------- //
 	// Don't knock last player, if someone gave up
 	if (RoundGiveUpsAmount > 0) {
@@ -387,7 +392,7 @@ if (LapPlayersNbDoubled[Event.Player.CurrentNbLaps-1] == 0) {
 		RoundGiveUpsAmount = 0;
 	}
 	// ---------------------------------- //
-	// Knockout the slowest player when someone cross finish before him
+	// Knockout the slowest player when someone crosses the finish before them
 	else {
 		declare CTmPlayer[] PlayersToCheck;
 		PlayersToCheck.clear();
@@ -398,16 +403,17 @@ if (LapPlayersNbDoubled[Event.Player.CurrentNbLaps-1] == 0) {
 		declare Boolean IsDoubleKO;
 		IsDoubleKO = (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3);
 
-		// DoubleKO
+		// DoubleKO: exactly two tied at the back. Knock one at a time and stop
+		// if only one racer would remain, so we never knock everyone.
 		if (IsDoubleKO && PlayersToCheck.count == 2) {
-			for (I, 0, 1) {
+			while (PlayersToCheck.count > 0 && GetRacingPlayersAmount() > 1) {
 				KnockoutPlayer(PlayersToCheck[0], True);
 				declare Removed = PlayersToCheck.removekey(0);
 			}
 		}
 
-		// Normal mode
-		else if (PlayersToCheck.count == 1) KnockoutPlayer(PlayersToCheck[0], True);
+		// Normal mode: exactly one clearly last (never the last racer)
+		else if (PlayersToCheck.count == 1 && GetRacingPlayersAmount() > 1) KnockoutPlayer(PlayersToCheck[0], True);
 	}
 }
 ***
@@ -481,18 +487,32 @@ if (!MapIsLapRace && !ServerShutdownRequested && !MatchEndRequested) {
 			Translations::SendChat(["Noone is knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
 		}
 		// ---------------------------------- //
-		// Knock latest player if all finished and noone gave up
+		// Knock slowest player(s) if all finished and noone gave up
 		else if (GetRacingPlayersAmount() > 1 && RoundFinishTimes.count > 0) {
-			declare Integer Multiplier;
-			Multiplier = 1;
-			if (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3) Multiplier = 2;
+			declare Integer KnocksRemaining;
+			KnocksRemaining = 1;
+			if (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3) KnocksRemaining = 2;
 
-			foreach (Player in Players) {
-				for (I, 0, Multiplier-1) {
-					if (Player.CurRace.Time == RoundFinishTimes[RoundFinishTimes.count - 1]) {
-						KnockoutPlayer(Player, True);
-						declare Removed = RoundFinishTimes.remove(Player.CurRace.Time);
+			// Knock the slowest finisher(s), one at a time.
+			// Guard on RoundFinishTimes.count so we never index [-1], and on
+			// GetRacingPlayersAmount() > 1 so we never knock the last player.
+			while (KnocksRemaining > 0 && RoundFinishTimes.count > 0 && GetRacingPlayersAmount() > 1) {
+				declare Integer SlowestTime = RoundFinishTimes[RoundFinishTimes.count - 1];
+
+				// Find the racing player matching that finish time
+				declare CTmPlayer SlowestPlayer;
+				SlowestPlayer = Null;
+				foreach (Player in Players) {
+					if (IsRacing(Player.User) && Player.CurRace.Time == SlowestTime) {
+						SlowestPlayer = Player;
+						break;
 					}
+				}
+
+				declare Removed = RoundFinishTimes.remove(SlowestTime);
+				if (SlowestPlayer != Null) {
+					KnockoutPlayer(SlowestPlayer, True);
+					KnocksRemaining -= 1;
 				}
 			}
 		}
