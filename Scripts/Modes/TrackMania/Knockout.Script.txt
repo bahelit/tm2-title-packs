@@ -199,6 +199,14 @@ if (S_UseAlternateRules) {
 MB_WarmUp(WarmUpTimeLimit);
 UpdatePlayerColors();
 
+// Warm-up can leave players spawned. StartRound spawns racers with
+// TM2::StartRace(), but that never re-triggers the start countdown for a
+// player who is already spawned, so the very first round of a map would
+// freeze everyone in place. Force everyone back to the waiting state here so
+// the first round starts from the same clean state as rounds 2+ (which come
+// out of EndRound's TM2::WaitRaceAll()).
+TM2::WaitRaceAll();
+
 // ---------------------------------- //
 // Start new Knockout
 if (GetRacingPlayersAmount() <= 1) {
