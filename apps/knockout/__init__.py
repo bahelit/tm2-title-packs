@@ -7,8 +7,11 @@ from .capture import CaptureController
 from .cup import CupController
 from .commands import CupCommands
 from .results import ResultsController
+from .season import SeasonController
+from .live import LiveController
+from .markers import MarkersController
 from .config import PresetConfig
-from .views import CupWidget
+from .views import CupWidget, CupTicker, CupLowerThird
 from . import score_modes
 from .models import MatchInfo, PlayerScore, CupInfo, CupMatch  # noqa: F401  (registers tables)
 
@@ -110,6 +113,30 @@ class KnockoutConfig(AppConfig):
 			description='Show a live standings widget during an active cup (experimental)',
 			default=False,
 		)
+		self.setting_show_overlays = Setting(
+			'show_overlays',
+			'Show Broadcast Overlays',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Show the live players-remaining ticker and elimination lower-third (for streams)',
+			default=False,
+		)
+		self.setting_vod_markers_enabled = Setting(
+			'vod_markers_enabled',
+			'Enable VOD Highlight Markers',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Append timestamped highlight markers (eliminations, winners, etc.) to a file',
+			default=False,
+		)
+		self.setting_vod_markers_path = Setting(
+			'vod_markers_path',
+			'VOD Markers File',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Path to the VOD highlight markers file (blank = disabled)',
+			default='',
+		)
 
 	async def on_init(self):
 		await self.context.setting.register(
@@ -122,6 +149,9 @@ class KnockoutConfig(AppConfig):
 			self.setting_payouts_enabled,
 			self.setting_cup_export_path,
 			self.setting_show_cup_widget,
+			self.setting_show_overlays,
+			self.setting_vod_markers_enabled,
+			self.setting_vod_markers_path,
 		)
 
 	async def on_start(self):
@@ -141,9 +171,23 @@ class KnockoutConfig(AppConfig):
 		await self.cup.on_start()
 
 		self.results = ResultsController(self)
+		self.season = SeasonController(self)
 
 		self.capture = CaptureController(self)
 		await self.capture.on_start()
+
+		# VOD highlight markers (file-based, off by default).
+		self.markers = MarkersController(self)
+		await self.markers.on_start()
+
+		# Broadcast overlays: live ticker + transient lower-third (off by default).
+		self._overlays_enabled = await self.setting_show_overlays.get_value()
+		self.ticker = CupTicker(self)
+		self.lower_third = CupLowerThird(self)
+
+		# Live match state drives the overlays and marker events.
+		self.live = LiveController(self)
+		await self.live.on_start()
 
 		self.commands = CupCommands(self)
 		await self.commands.on_start()
@@ -182,12 +226,23 @@ class KnockoutConfig(AppConfig):
 			pass
 
 	async def handle_knockout_callback(self, signal, **kwargs):
-		enabled = await self.setting_notifications.get_value()
-		if not enabled:
-			return
-
 		code = signal.code
 		payload = kwargs.get('player_login') or kwargs.get('login')
+		login = payload[0] if isinstance(payload, (list, tuple)) and len(payload) > 0 else str(payload)
+
+		# Live overlays / markers react regardless of the chat-notification setting.
+		live = getattr(self, 'live', None)
+		if live is not None:
+			if code == 'KOPlayerAdded':
+				await live.on_player_added(login)
+			elif code == 'KOPlayerRemoved':
+				await live.on_player_removed(login)
+			elif code == 'KOSendWinner':
+				await live.on_winner(login)
+
+		# Chat notifications are independently gated.
+		if not await self.setting_notifications.get_value():
+			return
 
 		if code == 'KOPlayerAdded':
 			await self._handle_player_added(payload)

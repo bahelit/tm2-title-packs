@@ -52,6 +52,17 @@ class CupCommands:
 				description='Show the cup standings.'),
 			Command(command='matches', namespace='cup', target=self.cmd_matches, admin=False,
 				description='List the maps played in the cup.'),
+			Command(command='season', namespace='cup', target=self.cmd_season, admin=False,
+				description='Show the season leaderboard across all cups.')
+				.add_param(name='key', required=False, help='Limit to one cup key.'),
+			Command(command='stats', namespace='cup', target=self.cmd_stats, admin=False,
+				description='Show a player\'s cup history.')
+				.add_param(name='login', required=True, help='Player login.'),
+			Command(command='streamstart', namespace='ko', target=self.cmd_streamstart, admin=True,
+				description='Mark t=0 for VOD highlight markers (stream-relative clock).'),
+			Command(command='mark', namespace='ko', target=self.cmd_mark, admin=True,
+				description='Write a manual VOD highlight marker.')
+				.add_param(name='note', required=False, nargs='*', help='Marker note.'),
 		)
 
 	# ------------------------------------------------------------------- admin
@@ -203,3 +214,50 @@ class CupCommands:
 			await self.instance.chat('$bbb>>> No cup to show maps for.', player)
 			return
 		await self.app.results.show_matches(player, cup)
+
+	async def cmd_season(self, player, data, **kwargs):
+		from .views.season import SeasonView
+		cup_key = getattr(data, 'key', None) or None
+		standings = await self.app.season.compute_season(cup_key)
+		if not standings:
+			await self.instance.chat('$bbb>>> No cup results recorded yet.', player)
+			return
+		view = SeasonView(self.app, standings, cup_key)
+		await view.display(player=player)
+
+	async def cmd_stats(self, player, data, **kwargs):
+		from .views.season import CupStatsView
+		rows, summary = await self.app.season.compute_player(data.login)
+		if not rows:
+			await self.instance.chat(
+				'$bbb>>> No cup results for login $fff{}$bbb.'.format(data.login), player)
+			return
+		nickname = await self._resolve_nickname(data.login)
+		view = CupStatsView(self.app, data.login, nickname, rows, summary)
+		await view.display(player=player)
+
+	async def _resolve_nickname(self, login):
+		try:
+			target = await self.instance.player_manager.get_player(login=login)
+			return target.nickname
+		except Exception:
+			return login
+
+	async def cmd_streamstart(self, player, data, **kwargs):
+		markers = getattr(self.app, 'markers', None)
+		if markers is None or not markers.enabled or not markers.path:
+			await self.instance.chat(
+				'$f00>>> VOD markers are disabled (set vod_markers_enabled + vod_markers_path).', player)
+			return
+		await markers.set_stream_start()
+		await self.instance.chat('$ff0>>> VOD marker clock started (t=0).', player)
+
+	async def cmd_mark(self, player, data, **kwargs):
+		markers = getattr(self.app, 'markers', None)
+		if markers is None or not markers.enabled or not markers.path:
+			await self.instance.chat(
+				'$f00>>> VOD markers are disabled (set vod_markers_enabled + vod_markers_path).', player)
+			return
+		note = ' '.join(data.note).strip() if getattr(data, 'note', None) else 'mark'
+		await markers.log('manual', note)
+		await self.instance.chat('$ff0>>> Marker written: $fff{}$ff0.'.format(note), player)

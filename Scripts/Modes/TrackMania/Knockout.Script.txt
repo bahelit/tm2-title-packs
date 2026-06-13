@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  KNOCKOUT by domino54                  //
-//  script version: 1.3.0                 //
+//  script version: 1.4.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/RoundsBase.Script.txt"
@@ -18,6 +18,8 @@
 // ---------------------------------- //
 #Setting S_RoundsPerMap			0		as _("Number of rounds per map (0 = infinite):")
 #Setting S_DoubleKnockUntil		20		as _("DoubleKO - knock 2 players until (0 = disabled):")
+#Setting S_PracticeRounds		0		as _("Practice rounds before eliminations start (0 = disabled):")
+#Setting S_EnableShields		False	as _("Earned shields: round winner banks a one-time save:")
 #Setting S_DebugBotsCount		0		as _("Number of fake players (debug only):")
 #Setting S_AdminHoldStart		False	as "<hidden>" ///< Allows event admin to pause start of the next Knockout
 #Setting S_AdminSetPause		False	as "<hidden>" ///< Allows event admin to pause match before next round
@@ -59,6 +61,8 @@ STATUS: %1 players racing, %2 spectators
 // Globals
 // ---------------------------------- //
 declare Text[] G_PlayersRacing;	///< Logins of racing players
+declare Integer G_RoundsPlayed;		///< Rounds completed this match (used for practice rounds)
+declare Text G_PrevRoundOrderSig;	///< Last KORoundOrder signature sent (throttle duplicates)
 // Xml load
 declare Ident	G_UI_RequestId;			///< Id of the request to the xml file
 declare Integer	G_UI_RequestEndTime;	///< Timeout for the request
@@ -108,6 +112,26 @@ XmlRpc::RegisterCallback("KOMatchStandings", """
 * Example : ["winner_login:3", "second_login:2", "third_login:1", "last_login:0"]
 * Note : This callback is sent at map end. Points are the Knockout survival
 *        score (highest = winner). Sort by points descending for placement.
+""");
+
+XmlRpc::RegisterCallback("KORoundOrder", """
+* Data : An ordered array of "Login:Rank:Cps:Time:Finished" entries for the
+*        players still racing this round (Rank 1 = leader, worst is last).
+* Example : ["alice:1:3:42000:1", "bob:2:2:-1:0", "cara:3:1:-1:0"]
+* Note : Sent live during a round when the order changes, so broadcast overlays
+*        can highlight who is on the elimination bubble. Finished is 1/0.
+""");
+
+XmlRpc::RegisterCallback("KOShieldAwarded", """
+* Data : An array with the login of the player who earned a shield.
+* Example : ["Login"]
+* Note : Sent when the round winner banks a one-time save (S_EnableShields).
+""");
+
+XmlRpc::RegisterCallback("KOShieldUsed", """
+* Data : An array with the login of the player whose shield was spent.
+* Example : ["Login"]
+* Note : Sent when a shield saves a player from being knocked out.
 """);
 
 // Interface
@@ -201,6 +225,7 @@ RoundGiveUpsAmount	= 0;
 LapPlayersNbDoubled.clear();
 PrevMostLapsNb		= 0;
 PrevPlayersCount	= -1;
+G_PrevRoundOrderSig	= "";
 
 // ---------------------------------- //
 // Clear scores
@@ -250,6 +275,8 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 ***
 // ---------------------------------- //
 // Manage events
+declare Boolean SawWayPoint;
+SawWayPoint = False;
 foreach (Event in PendingEvents) {
 	PassOn(Event);
 	XmlRpc::PassOn(Event);
@@ -257,6 +284,7 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// Waypoint
 	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		SawWayPoint = True;
 		// ---------------------------------- //
 		// Scores table
 		if (Event.Player.Score != Null) {
@@ -287,6 +315,8 @@ foreach (Event in PendingEvents) {
 			if (CutOffTimeLimit <= 0) {
 				Message::SendStatusMessage(TL::Compose(_("$<%1$> wins the round!"), Event.Player.User.Name), 4000, 2);
 				CutOffTimeLimit = GetFinishTimeout();
+				// The fastest finisher of the round banks a one-time shield.
+				if (S_EnableShields && !MapIsLapRace) AwardShield(Event.Player);
 			}
 		}
 
@@ -326,6 +356,11 @@ foreach (Event in PendingEvents) {
 		else Event.Player.IsSpawned = False;
 	}
 }
+
+// ---------------------------------- //
+// Broadcast the live running order when a checkpoint/finish changed it, so
+// overlays can highlight who is on the elimination bubble.
+if (SawWayPoint) XmlRpc_KORoundOrder();
 
 // ---------------------------------- //
 // Unspawn players joining the game
@@ -372,7 +407,10 @@ foreach (Player in Players) {
 declare Integer PlayersNbDoubled;
 PlayersNbDoubled = 0;
 
-if (HighestLapsNb - LowestLapsNb >= 2) {
+// No eliminations during the opening practice rounds.
+declare Boolean LapPractice = (G_RoundsPlayed < S_PracticeRounds);
+
+if (HighestLapsNb - LowestLapsNb >= 2 && !LapPractice) {
 	foreach (Player in Players) {
 		// Knock doubled player (never knock the last racer)
 		if (Player.CurrentNbLaps == LowestLapsNb && IsRacing(Player.User) && GetRacingPlayersAmount() > 1) {
@@ -391,7 +429,7 @@ while (LapPlayersNbDoubled.count < Event.Player.CurrentNbLaps) LapPlayersNbDoubl
 // Knock last player if nobody was doubled on this lap
 declare Integer LapIndex;
 LapIndex = Event.Player.CurrentNbLaps - 1;
-if (LapIndex >= 0 && LapPlayersNbDoubled.existskey(LapIndex) && LapPlayersNbDoubled[LapIndex] == 0) {
+if (LapIndex >= 0 && !LapPractice && LapPlayersNbDoubled.existskey(LapIndex) && LapPlayersNbDoubled[LapIndex] == 0) {
 	// ---------------------------------- //
 	// Don't knock last player, if someone gave up
 	if (RoundGiveUpsAmount > 0) {
@@ -414,13 +452,15 @@ if (LapIndex >= 0 && LapPlayersNbDoubled.existskey(LapIndex) && LapPlayersNbDoub
 		// if only one racer would remain, so we never knock everyone.
 		if (IsDoubleKO && PlayersToCheck.count == 2) {
 			while (PlayersToCheck.count > 0 && GetRacingPlayersAmount() > 1) {
-				KnockoutPlayer(PlayersToCheck[0], True);
+				if (!TryConsumeShield(PlayersToCheck[0])) KnockoutPlayer(PlayersToCheck[0], True);
 				declare Removed = PlayersToCheck.removekey(0);
 			}
 		}
 
 		// Normal mode: exactly one clearly last (never the last racer)
-		else if (PlayersToCheck.count == 1 && GetRacingPlayersAmount() > 1) KnockoutPlayer(PlayersToCheck[0], True);
+		else if (PlayersToCheck.count == 1 && GetRacingPlayersAmount() > 1) {
+			if (!TryConsumeShield(PlayersToCheck[0])) KnockoutPlayer(PlayersToCheck[0], True);
+		}
 	}
 }
 ***
@@ -473,58 +513,76 @@ UpdateScoresTableFooter();
 // ---------------------------------- //
 // Knock only in Rounds mode
 if (!MapIsLapRace && !ServerShutdownRequested && !MatchEndRequested) {
-	declare Integer KnockedCount;
-	KnockedCount = 0;
-
 	// ---------------------------------- //
-	// Knock all DNF
-	foreach (Player in Players) {
-		declare Boolean HasFinishedTrack for Player;
-		if (GetRacingPlayersAmount() > 1 && !HasFinishedTrack && IsRacing(Player.User)) {
-			KnockedCount += 1;
-			ST2::SetColValue("KO_Time", Player.Score, "DNF");
-			KnockoutPlayer(Player, True);
-		}
+	// Opening practice rounds: no eliminations, just announce.
+	if (G_RoundsPlayed < S_PracticeRounds) {
+		Translations::SendChat(["Practice round %1: no eliminations.", TL::ToText(G_RoundsPlayed + 1)]);
 	}
+	else {
+		declare Integer KnockedCount;
+		KnockedCount = 0;
 
-	if (KnockedCount == 0) {
 		// ---------------------------------- //
-		// Everyone finished, but someone gave up
-		if (RoundGiveUpsAmount > 0) {
-			Translations::SendChat(["Noone is knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+		// Knock all DNF (shields never save a DNF)
+		foreach (Player in Players) {
+			declare Boolean HasFinishedTrack for Player;
+			if (GetRacingPlayersAmount() > 1 && !HasFinishedTrack && IsRacing(Player.User)) {
+				KnockedCount += 1;
+				ST2::SetColValue("KO_Time", Player.Score, "DNF");
+				KnockoutPlayer(Player, True);
+			}
 		}
-		// ---------------------------------- //
-		// Knock slowest player(s) if all finished and noone gave up
-		else if (GetRacingPlayersAmount() > 1 && RoundFinishTimes.count > 0) {
-			declare Integer KnocksRemaining;
-			KnocksRemaining = 1;
-			if (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3) KnocksRemaining = 2;
 
-			// Knock the slowest finisher(s), one at a time.
-			// Guard on RoundFinishTimes.count so we never index [-1], and on
-			// GetRacingPlayersAmount() > 1 so we never knock the last player.
-			while (KnocksRemaining > 0 && RoundFinishTimes.count > 0 && GetRacingPlayersAmount() > 1) {
-				declare Integer SlowestTime = RoundFinishTimes[RoundFinishTimes.count - 1];
+		if (KnockedCount == 0) {
+			// ---------------------------------- //
+			// Everyone finished, but someone gave up
+			if (RoundGiveUpsAmount > 0) {
+				Translations::SendChat(["Noone is knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+			}
+			// ---------------------------------- //
+			// Knock slowest player(s) if all finished and noone gave up
+			else if (GetRacingPlayersAmount() > 1 && RoundFinishTimes.count > 0) {
+				declare Integer KnocksRemaining;
+				KnocksRemaining = 1;
+				if (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3) KnocksRemaining = 2;
 
-				// Find the racing player matching that finish time
-				declare CTmPlayer SlowestPlayer;
-				SlowestPlayer = Null;
-				foreach (Player in Players) {
-					if (IsRacing(Player.User) && Player.CurRace.Time == SlowestTime) {
-						SlowestPlayer = Player;
-						break;
+				// Knock the slowest finisher(s), one at a time.
+				// Guard on RoundFinishTimes.count so we never index [-1], and on
+				// GetRacingPlayersAmount() > 1 so we never knock the last player.
+				while (KnocksRemaining > 0 && RoundFinishTimes.count > 0 && GetRacingPlayersAmount() > 1) {
+					declare Integer SlowestTime = RoundFinishTimes[RoundFinishTimes.count - 1];
+
+					// Find the racing player matching that finish time
+					declare CTmPlayer SlowestPlayer;
+					SlowestPlayer = Null;
+					foreach (Player in Players) {
+						if (IsRacing(Player.User) && Player.CurRace.Time == SlowestTime) {
+							SlowestPlayer = Player;
+							break;
+						}
 					}
-				}
 
-				declare Removed = RoundFinishTimes.remove(SlowestTime);
-				if (SlowestPlayer != Null) {
-					KnockoutPlayer(SlowestPlayer, True);
-					KnocksRemaining -= 1;
+					declare Removed = RoundFinishTimes.remove(SlowestTime);
+					if (SlowestPlayer != Null) {
+						// A shield saves the player; the elimination passes to the
+						// next-slowest finisher instead of knocking them.
+						if (TryConsumeShield(SlowestPlayer)) {
+							ST2::SetColValue("KO_Time", SlowestPlayer.Score, _("Saved"));
+						}
+						else {
+							KnockoutPlayer(SlowestPlayer, True);
+							KnocksRemaining -= 1;
+						}
+					}
 				}
 			}
 		}
 	}
 }
+
+// ---------------------------------- //
+// Count this round towards the practice-round total.
+G_RoundsPlayed += 1;
 
 // ---------------------------------- //
 // Passed players color
@@ -590,6 +648,9 @@ XmlRpc::UnregisterCallback("KOPlayerAdded");
 XmlRpc::UnregisterCallback("KOPlayerRemoved");
 XmlRpc::UnregisterCallback("KOSendWinner");
 XmlRpc::UnregisterCallback("KOMatchStandings");
+XmlRpc::UnregisterCallback("KORoundOrder");
+XmlRpc::UnregisterCallback("KOShieldAwarded");
+XmlRpc::UnregisterCallback("KOShieldUsed");
 ***
 
 // ---------------------------------- //
@@ -659,6 +720,71 @@ Void XmlRpc_KOMatchStandings() {
 }
 
 // ---------------------------------- //
+/** Callback sent live during a round with the current running order of racing
+ *	players, so overlays can highlight the elimination bubble.
+ *	Data:
+ *	[ "Login:Rank:Cps:Time:Finished", ... ] ordered (Rank 1 = leader).
+ *	Throttled to only fire when the order/finish state actually changes.
+ */
+Void XmlRpc_KORoundOrder() {
+	if (!XmlRpc::CallbackIsAllowed("KORoundOrder")) return;
+
+	declare Text[] Data;
+	declare Text Sig = "";
+	declare Integer Rank = 0;
+	foreach (Score in Scores) {
+		if (Score.User != Null && G_PlayersRacing.exists(Score.User.Login)) {
+			Rank += 1;
+			declare Integer Cps = 0;
+			declare Integer RaceTime = -1;
+			if (Score.BestRace != Null) {
+				Cps = Score.BestRace.Checkpoints.count;
+				RaceTime = Score.BestRace.Time;
+			}
+			declare Integer Finished = 0;
+			declare CTmPlayer KOPlayer = TM2::GetPlayer(Score.User.Login);
+			if (KOPlayer != Null) {
+				declare Boolean HasFinishedTrack for KOPlayer;
+				if (HasFinishedTrack) Finished = 1;
+			}
+			Data.add(Score.User.Login ^ ":" ^ Rank ^ ":" ^ Cps ^ ":" ^ RaceTime ^ ":" ^ Finished);
+			Sig ^= Score.User.Login ^ Finished ^ ";";
+		}
+	}
+
+	// Skip the send when nothing relevant changed since last time.
+	if (Sig == G_PrevRoundOrderSig) return;
+	G_PrevRoundOrderSig = Sig;
+	XmlRpc::SendCallbackArray("KORoundOrder", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player banks a one-time shield (round winner).
+ *	Data: [Player login]
+ */
+Void XmlRpc_KOShieldAwarded(CTmPlayer _Player) {
+	if (!XmlRpc::CallbackIsAllowed("KOShieldAwarded")) return;
+
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	XmlRpc::SendCallbackArray("KOShieldAwarded", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player's shield is spent to avoid a knockout.
+ *	Data: [Player login]
+ */
+Void XmlRpc_KOShieldUsed(CTmPlayer _Player) {
+	if (!XmlRpc::CallbackIsAllowed("KOShieldUsed")) return;
+
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	XmlRpc::SendCallbackArray("KOShieldUsed", Data);
+}
+
+// ---------------------------------- //
 // Knockout
 // ---------------------------------- //
 
@@ -666,10 +792,46 @@ Void XmlRpc_KOMatchStandings() {
 /// Start new Knockout (add players)
 Void StartKnockout() {
 	G_PlayersRacing.clear();
+	G_RoundsPlayed = 0;
 	foreach (Player in Players) {
 	 	G_PlayersRacing.add(Player.User.Login);
+	 	declare Integer ShieldTokens for Player;
+	 	ShieldTokens = 0;
 	 	XmlRpc_KOPlayerAdded(Player);
 	}
+}
+
+// ---------------------------------- //
+/** Give a player a one-time shield (capped at one), if shields are enabled.
+ *
+ *	@param	_Player		The player to award.
+ */
+Void AwardShield(CTmPlayer _Player) {
+	if (!S_EnableShields || _Player == Null) return;
+	declare Integer ShieldTokens for _Player;
+	if (ShieldTokens < 1) {
+		ShieldTokens = 1;
+		XmlRpc_KOShieldAwarded(_Player);
+		Translations::SendChat(["$<%1$> earns a shield for winning the round!", _Player.User.Name]);
+	}
+}
+
+// ---------------------------------- //
+/** Spend a player's shield to save them from a knockout, if they have one.
+ *
+ *	@param	_Player		The player about to be knocked out.
+ *	@return		True if a shield was consumed (player is saved).
+ */
+Boolean TryConsumeShield(CTmPlayer _Player) {
+	if (!S_EnableShields || _Player == Null) return False;
+	declare Integer ShieldTokens for _Player;
+	if (ShieldTokens > 0) {
+		ShieldTokens -= 1;
+		XmlRpc_KOShieldUsed(_Player);
+		Translations::SendChat(["$<%1$> uses a shield and survives!", _Player.User.Name]);
+		return True;
+	}
+	return False;
 }
 
 // ---------------------------------- //

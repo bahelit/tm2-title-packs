@@ -31,8 +31,7 @@ Copy the PyPlanet app (the whole `apps/knockout/` folder) and the game-mode scri
 <tm2>/Scripts/Libs/domino54/Translations.Script.txt  # Dependency
 ```
 
-`apps/knockout/` is a Python package — copy the directory and everything in it, not just
-one file:
+`apps/knockout/` is a Python package — copy the directory and everything in it:
 
 ```
 apps/knockout/
@@ -81,6 +80,8 @@ In your map playlist XML (`playlist.ini` or `.xml`), set the script name and add
 <script_settings>
   <setting name="S_RoundsPerMap" type="integer" value="0"/>
   <setting name="S_DoubleKnockUntil" type="integer" value="20"/>
+  <setting name="S_PracticeRounds" type="integer" value="0"/>
+  <setting name="S_EnableShields" type="boolean" value="0"/>
   <setting name="S_DebugBotsCount" type="integer" value="0"/>
   <setting name="S_FinishTimeout" type="integer" value="20"/>
   <setting name="S_ForceLapsNb" type="integer" value="0"/>
@@ -99,13 +100,17 @@ sudo systemctl restart pyplanet
 
 ### What the app does
 
-The Knockout app listens for 3 scripted callbacks and sends chat notifications:
+The Knockout app listens for scripted callbacks and sends chat notifications:
 
 | Callback | Notification |
 |---|---|
 | `KOPlayerAdded` | `$f90>>> {name} joined Knockout!` |
 | `KOPlayerRemoved` | `$f00>>> {name} was knocked out!` |
 | `KOSendWinner` | `$0f0>>> {name} is the winner!` |
+
+The mode also emits callbacks consumed by the broadcast overlays (no chat
+notification): `KORoundOrder` (live running order each round, for danger
+highlighting), `KOShieldAwarded`, and `KOShieldUsed`.
 
 These are controlled by settings in PyPlanet:
 
@@ -115,6 +120,31 @@ These are controlled by settings in PyPlanet:
 | `show_join` | `true` | Join notifications |
 | `show_knockout` | `true` | Knockout notifications |
 | `show_winner` | `true` | Winner notifications |
+| `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third |
+| `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file |
+| `vod_markers_path` | `""` | Path to the VOD markers file (blank = disabled) |
+
+### Streaming / broadcast features
+
+For livestreamed nights, the app adds spectator-facing extras (all opt-in):
+
+- **Live ticker + danger highlighting** (`show_overlays`): a "players remaining"
+  ticker, with the player(s) currently on the elimination bubble tinted red,
+  driven by the mode's `KORoundOrder` callback. The final two trigger a
+  "showdown" treatment.
+- **Elimination lower-third** (`show_overlays`): a transient banner on each
+  knockout, the round winner, and shield events.
+- **Earned shields** (`S_EnableShields`): the fastest finisher of a round banks a
+  one-time save; it auto-spends to keep them in when they'd otherwise be knocked
+  out (the elimination passes to the next-slowest finisher). Shields never save a
+  DNF or give-up.
+- **Practice rounds** (`S_PracticeRounds`): the opening N rounds run with no
+  eliminations, so a bad spawn lap doesn't end someone's night instantly.
+- **Season leaderboard & stats** (`/cup season`, `/cup stats <login>`): totals
+  across every cup — points, wins, podiums — with per-player history.
+- **VOD highlight markers** (`vod_markers_enabled` + `vod_markers_path`): a file
+  of timestamped events (map starts, eliminations, showdowns, winners, shields)
+  for fast clipping afterwards. `//ko streamstart` sets the stream-relative clock.
 
 ### Knockout game settings
 
@@ -122,6 +152,8 @@ These are controlled by settings in PyPlanet:
 |---|---|---|
 | `S_RoundsPerMap` | `0` | Number of rounds per map (0 = infinite) |
 | `S_DoubleKnockUntil` | `20` | Knock 2 players simultaneously until this count (0 = disabled) |
+| `S_PracticeRounds` | `0` | Opening rounds with no eliminations (0 = disabled) |
+| `S_EnableShields` | `false` | Earned shields: the round winner banks a one-time save, auto-spent to avoid a knockout |
 | `S_DebugBotsCount` | `0` | Fake bot players for testing |
 | `S_FinishTimeout` | `20` | Time limit between rounds in seconds |
 | `S_ForceLapsNb` | `0` | Force laps per round (0 = 1 lap) |
@@ -170,6 +202,8 @@ Admin (`//`):
 | `//cup edit <index>` | Toggle whether the map at that index counts towards totals. |
 | `//cup export` | Write CSV + Discord-markdown files of the standings. |
 | `//cup pay [payout]` | Pay planets to the standings (requires `cup_payouts_enabled`). |
+| `//ko streamstart` | Mark t=0 for VOD highlight markers (stream-relative clock). |
+| `//ko mark <note>` | Write a manual VOD highlight marker. |
 
 Public (`/`):
 
@@ -178,6 +212,8 @@ Public (`/`):
 | `/cup status` | Show the active cup and progress. |
 | `/cup results` | Open the cup standings window. |
 | `/cup matches` | List the maps played in the cup. |
+| `/cup season [key]` | Open the season leaderboard across all cups (optionally one cup key). |
+| `/cup stats <login>` | Open a player's cup history (cups, wins, podiums, places). |
 
 ### Score modes
 
