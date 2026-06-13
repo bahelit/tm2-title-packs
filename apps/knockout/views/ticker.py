@@ -24,8 +24,13 @@ class CupTicker(TemplateView):
 		data = await super().get_context_data()
 		data['count'] = self.count
 		data['showdown'] = self.showdown
-		data['danger_names'] = self.danger_names
 		data['racing_names'] = self.racing_names
+		# Precompute each bubble row's y here so the template carries no float
+		# arithmetic (PyPlanet's Jinja rejects trailing-dot literals like ``-5.5.``).
+		data['danger_rows'] = [
+			dict(name=name, y=-5.5 - index * 3.0)
+			for index, name in enumerate(self.danger_names)
+		]
 		return data
 
 	async def refresh(self, live):

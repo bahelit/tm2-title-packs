@@ -25,8 +25,11 @@ class CupWidget(TemplateView):
 
 	async def refresh(self, cup, standings, limit=8):
 		self.cup = cup
+		# y is precomputed here so the template carries no float arithmetic
+		# (PyPlanet's Jinja rejects trailing-dot literals like ``-7.``).
 		self.rows = [
-			dict(rank=index + 1, nickname=row['nickname'], points=row['cup_points'])
+			dict(rank=index + 1, nickname=row['nickname'], points=row['cup_points'],
+				y=-7.0 - index * 4.0)
 			for index, row in enumerate(standings[:limit])
 		]
 		await self.display()

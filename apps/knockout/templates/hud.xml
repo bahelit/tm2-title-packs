@@ -1,0 +1,14 @@
+<frame pos="-159. 32." z-index="0">
+	<quad pos="0. 0." size="48. {{ bg_height }}." halign="left" valign="top"
+		style="Bgs1InRace" substyle="BgCardSystem" opacity="0.7" />
+	<label pos="2. -2." size="44. 4." halign="left" valign="top"
+		textsize="2" textfont="GameFontBlack" textcolor="FFCC00" text="{{ round_text }}" />
+	<label pos="2. -7." size="44. 3." halign="left" valign="top"
+		textsize="1" textcolor="FFFFFF" text="{{ count }} alive   KO {{ danger_count }}/round" />
+	{% for row in rows %}
+	<label pos="2. {{ row.y }}." size="30. 3.5." halign="left" valign="top"
+		textsize="1" textcolor="{{ row.color }}" text="{{ row.rank }}. {{ row.name }}" />
+	<label pos="46. {{ row.y }}." size="14. 3.5." halign="right" valign="top"
+		textsize="1" textcolor="{{ row.color }}" text="{{ row.time }}" />
+	{% endfor %}
+</frame>

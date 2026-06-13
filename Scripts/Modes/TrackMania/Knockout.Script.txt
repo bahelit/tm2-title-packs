@@ -122,6 +122,12 @@ XmlRpc::RegisterCallback("KORoundOrder", """
 *        can highlight who is on the elimination bubble. Finished is 1/0.
 """);
 
+XmlRpc::RegisterCallback("KORoundStart", """
+* Data : ["CurrentRound:TotalRounds"] for the round that just began.
+* Example : ["3:5"]  (round 3 of 5; TotalRounds is 0 when unbounded)
+* Note : Sent at the start of each round so overlays can show the round number.
+""");
+
 XmlRpc::RegisterCallback("KOShieldAwarded", """
 * Data : An array with the login of the player who earned a shield.
 * Example : ["Login"]
@@ -271,6 +277,9 @@ declare RoundsMessage = MB_SectionRoundNb^" / "^TotalRoundsNb;
 if (S_RoundsPerMap <= 0 || MapIsLapRace) RoundsMessage = TL::ToText(MB_SectionRoundNb);
 
 Message::SendBigMessage(TL::Compose(_("Round %1"), RoundsMessage), 3000, 0);
+
+// Tell overlays which round just started (TotalRounds 0 = unbounded).
+XmlRpc_KORoundStart(MB_SectionRoundNb, S_RoundsPerMap);
 
 // Sequence
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
@@ -657,6 +666,7 @@ XmlRpc::UnregisterCallback("KOPlayerRemoved");
 XmlRpc::UnregisterCallback("KOSendWinner");
 XmlRpc::UnregisterCallback("KOMatchStandings");
 XmlRpc::UnregisterCallback("KORoundOrder");
+XmlRpc::UnregisterCallback("KORoundStart");
 XmlRpc::UnregisterCallback("KOShieldAwarded");
 XmlRpc::UnregisterCallback("KOShieldUsed");
 ***
@@ -764,6 +774,16 @@ Void XmlRpc_KORoundOrder() {
 	if (Sig == G_PrevRoundOrderSig) return;
 	G_PrevRoundOrderSig = Sig;
 	XmlRpc::SendCallbackArray("KORoundOrder", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent at the start of a round with its number.
+ *	Data: [ "CurrentRound:TotalRounds" ] (TotalRounds 0 = unbounded).
+ */
+Void XmlRpc_KORoundStart(Integer _Round, Integer _Total) {
+	if (!XmlRpc::CallbackIsAllowed("KORoundStart")) return;
+	declare Data = [_Round ^ ":" ^ _Total];
+	XmlRpc::SendCallbackArray("KORoundStart", Data);
 }
 
 // ---------------------------------- //

@@ -53,6 +53,23 @@ async def parse_round_order(source, signal, **kwargs):
 	return dict(order=order)
 
 
+async def parse_round_start(source, signal, **kwargs):
+	"""
+	Parse a KORoundStart payload (``["round:total"]``) into
+	``{'round': int, 'total': int}``. ``total`` is 0 when the map is unbounded.
+	"""
+	items = _flatten(source)
+	parts = str(items[0]).split(':') if items else []
+
+	def _int(index):
+		try:
+			return int(parts[index])
+		except (IndexError, ValueError):
+			return 0
+
+	return dict(round=_int(0), total=_int(1))
+
+
 def _first_login(payload):
 	"""Pull a single login out of the various payload shapes the mode sends."""
 	if isinstance(payload, (list, tuple)):
@@ -85,8 +102,11 @@ class LiveController:
 		self.racing = []
 		self.order = []
 		self.phase = 'idle'
+		self.round = 0
+		self.total_rounds = 0
 		self._double_until = 0
 		self._order_signal = None
+		self._round_signal = None
 
 	@property
 	def count(self):
@@ -102,6 +122,17 @@ class LiveController:
 		)
 		self.app.context.signals.register_signal(self._order_signal)
 		self.app.context.signals.listen(self._order_signal, self.on_round_order)
+
+		# KORoundStart: the round number at the start of each round (added in the
+		# mode), so the HUD can show "ROUND x / y".
+		self._round_signal = Callback(
+			call='ModeScriptCallback',
+			namespace='script',
+			code='KORoundStart',
+			target=parse_round_start,
+		)
+		self.app.context.signals.register_signal(self._round_signal)
+		self.app.context.signals.listen(self._round_signal, self.on_round_start)
 
 		# Shield earned / spent (added in the mode); simple single-login payloads.
 		for code, handler in (
@@ -121,6 +152,8 @@ class LiveController:
 		self.racing = []
 		self.order = []
 		self.phase = 'idle'
+		self.round = 0
+		self.total_rounds = 0
 		# Cache the double-knockout threshold so danger highlighting matches how
 		# many players the mode will actually knock out this round.
 		self._double_until = await self._read_double_until()
@@ -176,6 +209,11 @@ class LiveController:
 		self.order = order or []
 		await self._refresh_overlays()
 
+	async def on_round_start(self, round=0, total=0, **kwargs):
+		self.round = round
+		self.total_rounds = total
+		await self._refresh_overlays()
+
 	async def on_shield_awarded(self, signal=None, **kwargs):
 		login = _first_login(kwargs.get('player_login') or kwargs.get('login'))
 		await self._flash_shield(login, awarded=True)
@@ -212,14 +250,21 @@ class LiveController:
 	# --------------------------------------------------------------- helpers
 
 	async def _refresh_overlays(self):
-		overlays = getattr(self.app, '_overlays_enabled', False)
+		# Broadcast ticker (stream overlays, opt-in) and the always-on match HUD
+		# are gated independently; refresh whichever is enabled.
 		ticker = getattr(self.app, 'ticker', None)
-		if not overlays or ticker is None:
-			return
-		try:
-			await ticker.refresh(self)
-		except Exception:
-			logger.exception('Knockout: failed to refresh live ticker')
+		if getattr(self.app, '_overlays_enabled', False) and ticker is not None:
+			try:
+				await ticker.refresh(self)
+			except Exception:
+				logger.exception('Knockout: failed to refresh live ticker')
+
+		hud = getattr(self.app, 'hud', None)
+		if getattr(self.app, '_match_hud_enabled', False) and hud is not None:
+			try:
+				await hud.refresh(self)
+			except Exception:
+				logger.exception('Knockout: failed to refresh match HUD')
 
 	async def _player_name(self, login):
 		try:
