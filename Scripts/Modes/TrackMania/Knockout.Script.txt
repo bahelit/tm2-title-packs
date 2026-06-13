@@ -103,6 +103,13 @@ XmlRpc::RegisterCallback("KOSendWinner", """
 * Note : This callback is sent when match is over.
 """);
 
+XmlRpc::RegisterCallback("KOMatchStandings", """
+* Data : An array of "Login:Points" entries, one per player, for the finished map.
+* Example : ["winner_login:3", "second_login:2", "third_login:1", "last_login:0"]
+* Note : This callback is sent at map end. Points are the Knockout survival
+*        score (highest = winner). Sort by points descending for placement.
+""");
+
 // Interface
 UI::UnloadModule("PrevBestTime");
 UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
@@ -542,6 +549,7 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 ST2::ClearScores();
 XmlRpc::SendPlayersScores();
+XmlRpc_KOMatchStandings();
 UpdatePlayerColors();
 RemoveDisconnected();
 
@@ -581,6 +589,7 @@ Layers::Destroy("Custom");
 XmlRpc::UnregisterCallback("KOPlayerAdded");
 XmlRpc::UnregisterCallback("KOPlayerRemoved");
 XmlRpc::UnregisterCallback("KOSendWinner");
+XmlRpc::UnregisterCallback("KOMatchStandings");
 ***
 
 // ---------------------------------- //
@@ -631,6 +640,22 @@ Void XmlRpc_KOSendWinner(CTmPlayer _Player) {
 	if (_Player != Null) PlayerLogin = _Player.User.Login;
 	declare Data = [PlayerLogin];
 	XmlRpc::SendCallbackArray("KOSendWinner", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent at map end with the final standings of the finished map
+ *	Data:
+ *	[ "Login:Points", ... ] one entry per player, Points = survival score.
+ *	Sort by points descending for placement (highest = winner).
+ */
+Void XmlRpc_KOMatchStandings() {
+	if (!XmlRpc::CallbackIsAllowed("KOMatchStandings")) return;
+
+	declare Text[] Data;
+	foreach (Score in Scores) {
+		if (Score.User != Null) Data.add(Score.User.Login ^ ":" ^ Score.Points);
+	}
+	XmlRpc::SendCallbackArray("KOMatchStandings", Data);
 }
 
 // ---------------------------------- //

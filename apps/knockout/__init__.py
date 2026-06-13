@@ -3,6 +3,15 @@ from pyplanet.core.events import Callback, Signal
 from pyplanet.contrib.setting import Setting
 from pyplanet.apps.core.maniaplanet import callbacks as mp_signals
 
+from .capture import CaptureController
+from .cup import CupController
+from .commands import CupCommands
+from .results import ResultsController
+from .config import PresetConfig
+from .views import CupWidget
+from . import score_modes
+from .models import MatchInfo, PlayerScore, CupInfo, CupMatch  # noqa: F401  (registers tables)
+
 
 # Custom scripted callbacks for Knockout
 knockout_callbacks = [
@@ -61,6 +70,46 @@ class KnockoutConfig(AppConfig):
 			description='Notify when a match winner is determined',
 			default=True,
 		)
+		self.setting_cup_presets_path = Setting(
+			'cup_presets_path',
+			'Cup Presets File',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Path to the cup presets JSON file (names/presets/payouts)',
+			default='',
+		)
+		self.setting_default_score_mode = Setting(
+			'cup_default_score_mode',
+			'Default Cup Score Mode',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Score mode used for new cups: {}'.format(', '.join(score_modes.mode_names())),
+			default=score_modes.DEFAULT_MODE,
+		)
+		self.setting_payouts_enabled = Setting(
+			'cup_payouts_enabled',
+			'Enable Cup Planet Payouts',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Allow //cup pay to send real planets to cup winners',
+			default=False,
+		)
+		self.setting_cup_export_path = Setting(
+			'cup_export_path',
+			'Cup Export Directory',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Directory for //cup export files (blank = working directory)',
+			default='',
+		)
+		self.setting_show_cup_widget = Setting(
+			'show_cup_widget',
+			'Show Live Cup Widget',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Show a live standings widget during an active cup (experimental)',
+			default=False,
+		)
 
 	async def on_init(self):
 		await self.context.setting.register(
@@ -68,6 +117,11 @@ class KnockoutConfig(AppConfig):
 			self.setting_show_join,
 			self.setting_show_knockout,
 			self.setting_show_winner,
+			self.setting_cup_presets_path,
+			self.setting_default_score_mode,
+			self.setting_payouts_enabled,
+			self.setting_cup_export_path,
+			self.setting_show_cup_widget,
 		)
 
 	async def on_start(self):
@@ -76,6 +130,56 @@ class KnockoutConfig(AppConfig):
 			self.context.signals.listen('script:{}'.format(cb.code), self.handle_knockout_callback)
 
 		self._match_winner = None
+
+		# Cup presets (names / mode presets / payouts) from the configured file.
+		presets_path = await self.setting_cup_presets_path.get_value()
+		self.presets = PresetConfig(presets_path or None)
+		self.presets.load()
+
+		# Cup controllers: state machine, score capture, and commands.
+		self.cup = CupController(self)
+		await self.cup.on_start()
+
+		self.results = ResultsController(self)
+
+		self.capture = CaptureController(self)
+		await self.capture.on_start()
+
+		self.commands = CupCommands(self)
+		await self.commands.on_start()
+
+		# Optional live standings widget.
+		self._show_widget = await self.setting_show_cup_widget.get_value()
+		self.widget = CupWidget(self)
+		if self._show_widget and self.cup.active_cup:
+			await self.update_widget()
+
+	async def on_match_recorded(self, map_start_time, standings):
+		"""Called by capture after a finished map's standings are persisted."""
+		await self.cup.on_match_recorded(map_start_time, standings)
+		await self.update_widget()
+
+	async def on_cup_complete(self, cup):
+		"""Called by the cup controller when a cup reaches its map count."""
+		await self.results.announce_top(cup)
+		await self.hide_widget()
+
+	async def update_widget(self):
+		"""Refresh the live widget, or hide it when no cup is active / disabled."""
+		if not getattr(self, '_show_widget', False) or not self.cup.active_cup:
+			await self.hide_widget()
+			return
+		standings = await self.results.compute_standings(self.cup.active_cup)
+		try:
+			await self.widget.refresh(self.cup.active_cup, standings)
+		except Exception:
+			pass
+
+	async def hide_widget(self):
+		try:
+			await self.widget.hide()
+		except Exception:
+			pass
 
 	async def handle_knockout_callback(self, signal, **kwargs):
 		enabled = await self.setting_notifications.get_value()
