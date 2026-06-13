@@ -41,10 +41,17 @@ class CupCommands:
 			Command(command='pay', namespace='cup', target=self.cmd_pay, admin=True,
 				description='Pay planets to the cup standings (must be enabled).')
 				.add_param(name='payout', required=False),
+			Command(command='edit', namespace='cup', target=self.cmd_edit, admin=True,
+				description='Toggle whether a map counts towards the cup, by index.')
+				.add_param(name='index', required=True, type=int),
+			Command(command='export', namespace='cup', target=self.cmd_export, admin=True,
+				description='Write CSV + Discord exports of the cup standings.'),
 			Command(command='status', namespace='cup', target=self.cmd_status, admin=False,
 				description='Show the active cup status.'),
 			Command(command='results', namespace='cup', target=self.cmd_results, admin=False,
 				description='Show the cup standings.'),
+			Command(command='matches', namespace='cup', target=self.cmd_matches, admin=False,
+				description='List the maps played in the cup.'),
 		)
 
 	# ------------------------------------------------------------------- admin
@@ -68,11 +75,13 @@ class CupCommands:
 				player.nickname, cup.name, cup.edition,
 				'{} maps'.format(map_count) if map_count else 'open-ended')
 		)
+		await self.app.update_widget()
 
 	async def cmd_off(self, player, data, **kwargs):
 		cup = await self.cup.stop_cup()
 		if cup:
 			await self.instance.chat('$ff0>>> Cup $fff{}$ff0 stopped.'.format(cup.name))
+			await self.app.hide_widget()
 		else:
 			await self.instance.chat('$f00>>> No active cup.', player)
 
@@ -143,6 +152,29 @@ class CupCommands:
 				len(paid), len(plan), cup.name)
 		)
 
+	async def cmd_edit(self, player, data, **kwargs):
+		state = await self.cup.toggle_map(data.index)
+		if state is None:
+			await self.instance.chat(
+				'$f00>>> No active cup, or no map at index {}.'.format(data.index), player)
+			return
+		await self.instance.chat(
+			'$ff0>>> Map {} now {}$ff0 the cup totals.'.format(
+				data.index, 'counts towards' if state else '$888excluded from')
+		)
+
+	async def cmd_export(self, player, data, **kwargs):
+		cup = self.cup.active_cup or await self.cup.last_cup()
+		if not cup:
+			await self.instance.chat('$f00>>> No cup to export.', player)
+			return
+		paths = await self.app.results.export(cup)
+		if not paths:
+			await self.instance.chat('$f00>>> Export failed (check the server log).', player)
+			return
+		await self.instance.chat(
+			'$ff0>>> Exported cup standings to: $fff{}$ff0'.format(', '.join(paths)), player)
+
 	# ------------------------------------------------------------------ public
 
 	async def cmd_status(self, player, data, **kwargs):
@@ -164,3 +196,10 @@ class CupCommands:
 			await self.instance.chat('$bbb>>> Cup results are not available yet.', player)
 			return
 		await results.show(player)
+
+	async def cmd_matches(self, player, data, **kwargs):
+		cup = self.cup.active_cup or await self.cup.last_cup()
+		if not cup:
+			await self.instance.chat('$bbb>>> No cup to show maps for.', player)
+			return
+		await self.app.results.show_matches(player, cup)

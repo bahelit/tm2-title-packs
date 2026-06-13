@@ -8,7 +8,7 @@ class CupResultsView(ManualListView):
 	icon_substyle = 'Statistics'
 
 	def __init__(self, app, cup, standings):
-		super().__init__()
+		super().__init__(self)
 		self.app = app
 		self.manager = app.context.ui
 		self.cup = cup

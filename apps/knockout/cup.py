@@ -101,6 +101,22 @@ class CupController:
 			CupMatch.select().where(CupMatch.cup == cup.id).order_by(CupMatch.map_index)
 		))
 
+	async def toggle_map(self, index):
+		"""Flip whether the active cup's map at `index` counts. Returns the new state or None."""
+		if not self.active_cup:
+			return None
+		rows = list(await CupMatch.execute(
+			CupMatch.select().where(
+				(CupMatch.cup == self.active_cup.id) & (CupMatch.map_index == index)
+			)
+		))
+		if not rows:
+			return None
+		match = rows[0]
+		match.counts = not match.counts
+		await match.save()
+		return match.counts
+
 	async def on_match_recorded(self, map_start_time, standings):
 		"""Called by capture after a map's standings are stored."""
 		if not self.active_cup:
