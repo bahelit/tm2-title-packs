@@ -207,6 +207,14 @@ class LiveController:
 
 	async def on_round_order(self, order=None, **kwargs):
 		self.order = order or []
+		# The mode only emits KOPlayerAdded at the start of a fresh match, so if
+		# the plugin started/reloaded mid-match we never learned who is racing and
+		# the phase is stuck at 'idle' (HUD/overlays hidden). KORoundOrder carries
+		# the currently-racing logins every round, so seed the racing set from it
+		# when we have none -- this lets the HUD self-heal a round or so in.
+		if self.order and not self.racing and self.phase in ('idle', 'ended'):
+			self.racing = [entry['login'] for entry in self.order]
+			self.phase = 'showdown' if self.count == 2 else 'racing'
 		await self._refresh_overlays()
 
 	async def on_round_start(self, round=0, total=0, **kwargs):
