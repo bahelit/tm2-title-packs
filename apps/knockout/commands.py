@@ -63,6 +63,8 @@ class CupCommands:
 			Command(command='mark', namespace='ko', target=self.cmd_mark, admin=True,
 				description='Write a manual VOD highlight marker.')
 				.add_param(name='note', required=False, nargs='*', help='Marker note.'),
+			Command(command='hud', namespace='ko', target=self.cmd_hud, admin=True,
+				description='Diagnostic: report match HUD state and force a test render.'),
 		)
 
 	# ------------------------------------------------------------------- admin
@@ -261,3 +263,29 @@ class CupCommands:
 		note = ' '.join(data.note).strip() if getattr(data, 'note', None) else 'mark'
 		await markers.log('manual', note)
 		await self.instance.chat('$ff0>>> Marker written: $fff{}$ff0.'.format(note), player)
+
+	async def cmd_hud(self, player, data, **kwargs):
+		app = self.app
+		live = getattr(app, 'live', None)
+		enabled = getattr(app, '_match_hud_enabled', False)
+		phase = getattr(live, 'phase', '?')
+		count = getattr(live, 'count', 0)
+		rnd = getattr(live, 'round', 0)
+		await self.instance.chat(
+			'$bbb>>> HUD enabled=$fff{}$bbb phase=$fff{}$bbb alive=$fff{}$bbb round=$fff{}$bbb'.format(
+				enabled, phase, count, rnd),
+			player,
+		)
+		hud = getattr(app, 'hud', None)
+		if hud is None:
+			await self.instance.chat('$f00>>> No HUD view (plugin not fully started?).', player)
+			return
+		try:
+			await hud.show_test(player=player)
+			await self.instance.chat(
+				'$bbb>>> Test HUD shown top-left. If you SEE it, rendering works and the '
+				'issue is match state/callbacks (start a fresh match). If NOT, it is a '
+				'render/template problem.', player)
+		except Exception as e:
+			logger.exception('Knockout: //ko hud test render failed')
+			await self.instance.chat('$f00>>> HUD render FAILED: {} (see server log).'.format(e), player)
