@@ -21,15 +21,37 @@ All ManiaScript libraries written by Dommy for ManiaPlanet gaming system. Files 
 
 ### Files needed
 
-Copy these 5 files to your server:
+Copy the PyPlanet app (the whole `apps/knockout/` folder) and the game-mode scripts to your server:
 
 ```
-<pyplanet>/apps/knockout/__init__.py            # PyPlanet app
+<pyplanet>/apps/knockout/                       # PyPlanet app (copy the ENTIRE folder)
 <pyplanet>/config.yaml                          # PyPlanet config (add app to APPS list)
 <tm2>/Scripts/Modes/TrackMania/Knockout.Script.txt   # Game mode script
 <tm2>/Scripts/Libs/domino54/SentenceBank.Script.txt  # Dependency
 <tm2>/Scripts/Libs/domino54/Translations.Script.txt  # Dependency
 ```
+
+`apps/knockout/` is a Python package — copy the directory and everything in it, not just
+one file:
+
+```
+apps/knockout/
+  __init__.py            # AppConfig: notifications + cup wiring
+  capture.py             # records each map's standings to the database
+  cup.py                 # cup lifecycle (start/stop, mapcount, edition, scoremode)
+  commands.py            # //cup and /cup chat commands
+  results.py             # cross-map score summation + results UI
+  score_modes.py         # points-by-placement tables
+  config.py              # loads the cup presets JSON
+  payouts.py             # planet payouts by placement
+  presets_example.json   # sample presets file (copy & edit, then set cup_presets_path)
+  models/                # database models (cup, match, player score)
+  views/                 # results / matches windows + live widget
+  templates/             # widget ManiaLink template
+```
+
+PyPlanet creates the database tables automatically on first start; there is nothing to
+migrate by hand.
 
 ### Step 1: Register the PyPlanet app
 
