@@ -6,6 +6,7 @@ from pyplanet.apps.core.maniaplanet import callbacks as mp_signals
 from .capture import CaptureController
 from .cup import CupController
 from .commands import CupCommands
+from .results import ResultsController
 from .models import MatchInfo, PlayerScore, CupInfo, CupMatch  # noqa: F401  (registers tables)
 
 
@@ -86,6 +87,8 @@ class KnockoutConfig(AppConfig):
 		self.cup = CupController(self)
 		await self.cup.on_start()
 
+		self.results = ResultsController(self)
+
 		self.capture = CaptureController(self)
 		await self.capture.on_start()
 
@@ -95,6 +98,10 @@ class KnockoutConfig(AppConfig):
 	async def on_match_recorded(self, map_start_time, standings):
 		"""Called by capture after a finished map's standings are persisted."""
 		await self.cup.on_match_recorded(map_start_time, standings)
+
+	async def on_cup_complete(self, cup):
+		"""Called by the cup controller when a cup reaches its map count."""
+		await self.results.announce_top(cup)
 
 	async def handle_knockout_callback(self, signal, **kwargs):
 		enabled = await self.setting_notifications.get_value()
