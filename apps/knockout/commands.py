@@ -267,13 +267,21 @@ class CupCommands:
 	async def cmd_hud(self, player, data, **kwargs):
 		app = self.app
 		live = getattr(app, 'live', None)
-		enabled = getattr(app, '_match_hud_enabled', False)
+		# Cached flag (read once at on_start) vs the live setting value. If these
+		# disagree, the cache is stale and the HUD is gated off by a value that no
+		# longer reflects the setting.
+		cached = getattr(app, '_match_hud_enabled', False)
+		try:
+			live_val = await app.setting_show_match_hud.get_value()
+		except Exception as e:
+			live_val = 'err:{}'.format(e)
 		phase = getattr(live, 'phase', '?')
 		count = getattr(live, 'count', 0)
 		rnd = getattr(live, 'round', 0)
+		last_err = getattr(live, 'last_hud_error', None)
 		await self.instance.chat(
-			'$bbb>>> HUD enabled=$fff{}$bbb phase=$fff{}$bbb alive=$fff{}$bbb round=$fff{}$bbb'.format(
-				enabled, phase, count, rnd),
+			'$bbb>>> HUD enabled(cached)=$fff{}$bbb setting=$fff{}$bbb phase=$fff{}$bbb '
+			'alive=$fff{}$bbb round=$fff{}$bbb'.format(cached, live_val, phase, count, rnd),
 			player,
 		)
 		# Per-callback receipt counts reveal whether the mode's callbacks reach the
@@ -282,19 +290,42 @@ class CupCommands:
 		seen_str = ' '.join('{}={}'.format(name, seen.get(name, 0)) for name in (
 			'KOPlayerAdded', 'KOPlayerRemoved', 'KORoundOrder', 'KORoundStart', 'KOSendWinner'))
 		await self.instance.chat('$bbb>>> callbacks: $fff{}'.format(seen_str), player)
-		last_err = getattr(live, 'last_hud_error', None)
 		if last_err:
-			await self.instance.chat('$f00>>> last HUD refresh error: {}'.format(last_err), player)
+			await self.instance.chat(
+				'$f00>>> Last real HUD refresh error: $fff{}$f00 (this is why it is blank).'.format(last_err),
+				player,
+			)
 		hud = getattr(app, 'hud', None)
 		if hud is None:
 			await self.instance.chat('$f00>>> No HUD view (plugin not fully started?).', player)
 			return
+
+		# Exercise the REAL render path (to everyone, from current match state).
+		# This is the decisive test: if it throws, the problem is the real refresh;
+		# if it silently hides, phase/count say no match is being raced right now.
+		if live is not None:
+			try:
+				await hud.refresh(live)
+				if phase in ('idle', 'ended') or count <= 0:
+					await self.instance.chat(
+						'$bbb>>> Real HUD path ran but stayed hidden: no live match '
+						'(phase={} alive={}). Start/join a fresh match, then re-run.'.format(phase, count),
+						player,
+					)
+				else:
+					await self.instance.chat(
+						'$0f0>>> Real HUD refreshed to everyone from live state — it should be '
+						'visible now.', player)
+			except Exception as e:
+				logger.exception('Knockout: //ko hud real refresh failed')
+				await self.instance.chat(
+					'$f00>>> Real HUD refresh FAILED: {} (see server log).'.format(e), player)
+
 		try:
 			await hud.show_test(player=player)
 			await self.instance.chat(
-				'$bbb>>> Test HUD shown top-left. If you SEE it, rendering works and the '
-				'issue is match state/callbacks (start a fresh match). If NOT, it is a '
-				'render/template problem.', player)
+				'$bbb>>> Test HUD shown top-left (you only). If you SEE this but not the real '
+				'HUD above, the issue is match state/callbacks, not rendering.', player)
 		except Exception as e:
 			logger.exception('Knockout: //ko hud test render failed')
-			await self.instance.chat('$f00>>> HUD render FAILED: {} (see server log).'.format(e), player)
+			await self.instance.chat('$f00>>> Test HUD render FAILED: {} (see server log).'.format(e), player)

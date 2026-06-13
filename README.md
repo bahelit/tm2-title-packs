@@ -120,9 +120,24 @@ These are controlled by settings in PyPlanet:
 | `show_join` | `true` | Join notifications |
 | `show_knockout` | `true` | Knockout notifications |
 | `show_winner` | `true` | Winner notifications |
+| `show_match_hud` | `true` | Always-on left-side match HUD (round, players alive, KOs/round, live times) shown to everyone |
 | `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third |
+| `show_cup_widget` | `false` | Live cup standings widget during an active cup (experimental) |
 | `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file |
 | `vod_markers_path` | `""` | Path to the VOD markers file (blank = disabled) |
+
+### Match HUD
+
+- **Live match HUD** (`show_match_hud`, **on by default**): an always-on panel on
+  the left of the screen, shown to racers and spectators alike, with the round
+  number, how many players are still alive, how many get knocked out this round,
+  and the running order with each player's time (bubble player(s) tinted red,
+  safe finishers green). It is driven by the mode's live callbacks, so it appears
+  while a match is being raced and hides between matches. The round number needs
+  the updated `Knockout.Script.txt` deployed to the dedicated server; without it
+  the HUD still works but the header reads `KNOCKOUT` instead of `ROUND x / y`.
+  Use `//ko hud` (admin) to print the HUD's live state and force a test render
+  when diagnosing.
 
 ### Streaming / broadcast features
 
@@ -167,6 +182,7 @@ For livestreamed nights, the app adds spectator-facing extras (all opt-in):
 - **"Script not found" errors** — verify the 4 script files are in the correct relative paths under `<tm2>/Scripts/`
 - **RoundsBase errors** — the TM2 base title pack isn't loading correctly
 - **Callbacks not firing** — make sure `S_UseLegacyXmlRpcCallbacks` is not set to `1` in your XML; PyPlanet overrides it to `0`
+- **Match HUD never appears** — confirm `show_match_hud` is `true` in `//settings` (it defaults on, but a stored value can hold it off). Run `//ko hud`: if the first line reads `enabled=False`, that's the cause; if it reads `enabled=True phase=idle` while a match is being raced, the mode's live callbacks aren't reaching the plugin. The HUD is reactive — it only draws during an active match, not between matches.
 
 ## Knockout Cup Manager
 

@@ -113,6 +113,9 @@ class LiveController:
 			'KOPlayerAdded': 0, 'KOPlayerRemoved': 0, 'KOSendWinner': 0,
 			'KORoundOrder': 0, 'KORoundStart': 0,
 		}
+		# Last exception raised by the real HUD refresh path, surfaced by //ko hud.
+		# The test render (show_test) reports its own errors to chat, but the real
+		# refresh is fire-and-forget from callbacks, so we stash it here instead.
 		self.last_hud_error = None
 
 	@property
@@ -279,14 +282,30 @@ class LiveController:
 			except Exception:
 				logger.exception('Knockout: failed to refresh live ticker')
 
+		# The match HUD is on by default. Gate it on the LIVE setting value rather
+		# than a cached flag, so setting show_match_hud (or starting up with it on)
+		# always takes effect immediately -- no app reload, no stale-cache footgun.
+		# A failed read defaults to on so a transient error never hides the HUD.
 		hud = getattr(self.app, 'hud', None)
-		if getattr(self.app, '_match_hud_enabled', False) and hud is not None:
+		if hud is not None:
 			try:
-				await hud.refresh(self)
-				self.last_hud_error = None
-			except Exception as exc:
-				self.last_hud_error = repr(exc)
-				logger.exception('Knockout: failed to refresh match HUD')
+				hud_enabled = await self.app.setting_show_match_hud.get_value()
+			except Exception:
+				hud_enabled = True
+			# Keep the cached flag in sync purely for the //ko hud diagnostic.
+			self.app._match_hud_enabled = hud_enabled
+			if hud_enabled:
+				try:
+					await hud.refresh(self)
+					self.last_hud_error = None
+				except Exception as exc:
+					self.last_hud_error = repr(exc)
+					logger.exception('Knockout: failed to refresh match HUD')
+			else:
+				try:
+					await hud.hide()
+				except Exception:
+					logger.exception('Knockout: failed to hide match HUD')
 
 	async def _player_name(self, login):
 		try:
