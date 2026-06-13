@@ -41,6 +41,24 @@ def test_format_race_time_unset_is_dash():
 	assert hud.format_race_time('nope') == '—'
 
 
+# --------------------------------------------------------------- gap times
+
+def test_format_gap_under_a_minute():
+	assert hud.format_gap(31) == '+0.031'
+	assert hud.format_gap(448) == '+0.448'
+	assert hud.format_gap(0) == '+0.000'
+
+
+def test_format_gap_over_a_minute():
+	assert hud.format_gap(61000) == '+1:01.000'
+
+
+def test_format_gap_unset_is_dash():
+	assert hud.format_gap(-1) == '—'
+	assert hud.format_gap(None) == '—'
+	assert hud.format_gap('nope') == '—'
+
+
 # --------------------------------------------------------------- row colours
 
 def test_row_color_priority():
@@ -62,6 +80,32 @@ def test_round_label_bounded_and_unbounded():
 def test_round_label_before_first_round():
 	assert hud.round_label(0, 5) == 'KNOCKOUT'
 	assert hud.round_label('x', 5) == 'KNOCKOUT'
+
+
+# --------------------------------------------------------- header values
+
+def test_match_label():
+	assert hud.match_label(30) == 'MATCH 30'
+	assert hud.match_label(1) == 'MATCH 1'
+	assert hud.match_label(0) == 'KNOCKOUT'
+	assert hud.match_label(None) == 'KNOCKOUT'
+
+
+def test_round_value():
+	assert hud.round_value(12, 21) == '12/21'
+	assert hud.round_value(3, 0) == '3'
+	assert hud.round_value(0, 21) == '—'
+	assert hud.round_value('x', 5) == '—'
+
+
+def test_ko_per_round_label():
+	# Double-knockout active and field still above the threshold.
+	assert hud.ko_per_round_label(8, 14) == '2 UNTIL 8 PLAYERS'
+	# At or below the threshold it drops to one.
+	assert hud.ko_per_round_label(8, 8) == '1'
+	assert hud.ko_per_round_label(8, 5) == '1'
+	# No double-knockout configured.
+	assert hud.ko_per_round_label(0, 14) == '1'
 
 
 if __name__ == '__main__':

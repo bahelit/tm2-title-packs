@@ -1,15 +1,36 @@
 from pyplanet.views.template import TemplateView
 
-from ..hud_format import format_race_time, row_color, round_label
+from ..hud_format import (
+	format_race_time, format_gap, match_label, round_value, ko_per_round_label,
+)
+
+# Where the first player row sits below the frame top, and the height of each
+# row. The header block (title + ROUND/PLAYERS/KOS + divider) fills the space
+# above START_Y. Kept in the view so the template never does float arithmetic.
+START_Y = -21.0
+ROW_H = 4.0
+
+# When more players are listed than MAX_ROWS, the middle is collapsed to a single
+# "…" marker: the top HEAD_ROWS and the trailing rows (which include the danger
+# zone) are kept so the leaders and the elimination bubble are always visible.
+HEAD_ROWS = 4
+MAX_ROWS = 16
+
+# Per-cell colours.
+WHITE = 'FFFFFF'
+RED = 'FF3333'        # on the elimination bubble
+GREEN = '66FF66'      # safe gap behind the leader
+LEADER = '33DDFF'     # the leader's absolute time
+DIM = 'AAAAAA'        # no time yet / gap marker
 
 
 class MatchHud(TemplateView):
 	"""
 	Always-on left-side match HUD shown to everyone (players and spectators)
-	during a live Knockout match: the round number, how many players are still
-	alive, how many get knocked out this round, and the running order with the
-	players' times. The elimination-bubble player(s) are tinted red and safe
-	finishers green. Driven by LiveController.refresh().
+	during a live Knockout match. A structured header (match number, round,
+	players left, KOs per round) sits above the running order; each row shows the
+	player's gap to the leader (the leader shows an absolute time). Elimination-
+	bubble players are tinted red below a divider. Driven by LiveController.refresh().
 	"""
 
 	template_name = 'knockout/hud.xml'
@@ -19,20 +40,25 @@ class MatchHud(TemplateView):
 		self.app = app
 		self.manager = app.context.ui
 		self.id = 'knockout__match_hud'
-		self.round_text = 'KNOCKOUT'
-		self.count = 0
-		self.danger_count = 1
+		self.match_text = 'KNOCKOUT'
+		self.round_text = '—'
+		self.players_count = 0
+		self.ko_text = '1'
 		self.rows = []
+		self.has_divider = False
+		self.divider_y = 0.0
 
 	async def get_context_data(self):
 		data = await super().get_context_data()
+		data['match_text'] = self.match_text
 		data['round_text'] = self.round_text
-		data['count'] = self.count
-		data['danger_count'] = self.danger_count
+		data['players_count'] = self.players_count
+		data['ko_text'] = self.ko_text
 		data['rows'] = self.rows
-		# Background height is precomputed here so the template never depends on
-		# in-template float arithmetic (the header block is ~12 units tall).
-		data['bg_height'] = 12 + len(self.rows) * 4
+		data['has_divider'] = self.has_divider
+		data['divider_y'] = self.divider_y
+		# Background height is precomputed so the template never does float math.
+		data['bg_height'] = 22.0 + len(self.rows) * ROW_H
 		return data
 
 	async def refresh(self, live):
@@ -45,46 +71,93 @@ class MatchHud(TemplateView):
 			await self.hide()
 			return
 
-		self.round_text = round_label(getattr(live, 'round', 0), getattr(live, 'total_rounds', 0))
-		self.danger_count = live.danger_count
+		self.match_text = match_label(getattr(live, 'match_number', 0))
+		self.round_text = round_value(getattr(live, 'round', 0), getattr(live, 'total_rounds', 0))
 		danger = set(live.danger_logins())
 
-		rows = []
-
-		async def add(rank, login, time_ms, finished):
-			rows.append(dict(
-				y=-12 - len(rows) * 4,
-				rank=rank,
-				name=await self._name(login),
-				time=format_race_time(time_ms),
-				color=row_color(login in danger, finished),
-			))
-
+		# Collect (login, time_ms, finished) in display order: live round order when
+		# a round is on, otherwise the warm-up roster sorted by best lap.
+		entries = []
 		if live.order:
-			# Live round order carries live times and finished flags.
 			for entry in live.order:
 				login = entry.get('login')
 				if not login or login not in live.racing:
 					continue
-				await add(entry.get('rank', len(rows) + 1), login,
-					entry.get('time', -1), entry.get('finished', False))
+				entries.append((login, entry.get('time', -1), entry.get('finished', False)))
 		else:
-			# Warm-up / pre-round: roster from the server, best lap so far, fastest
-			# first (players without a lap yet sort to the bottom).
 			logins = await live.roster_logins()
 			logins.sort(key=lambda lg: (live.best_time(lg) < 0, live.best_time(lg)))
 			for login in logins:
-				await add(len(rows) + 1, login, live.best_time(login), False)
+				entries.append((login, live.best_time(login), False))
 
+		self.players_count = len(entries)
+		self.ko_text = ko_per_round_label(getattr(live, '_double_until', 0), len(entries))
+
+		# Baseline for gap times: the fastest valid time on the board.
+		leader_ms = None
+		for _login, time_ms, _finished in entries:
+			ms = self._as_int(time_ms)
+			if ms >= 0 and (leader_ms is None or ms < leader_ms):
+				leader_ms = ms
+
+		rows = []
+		for index, (login, time_ms, _finished) in enumerate(entries):
+			ms = self._as_int(time_ms)
+			is_danger = login in danger
+			if ms < 0:
+				time_text, time_color = '—', DIM
+			elif leader_ms is not None and ms == leader_ms:
+				time_text, time_color = format_race_time(ms), LEADER
+			else:
+				time_text, time_color = format_gap(ms - (leader_ms or 0)), GREEN
+			if is_danger:
+				time_color = RED
+			rows.append(dict(
+				gap=False,
+				rank=index + 1,
+				name=await self._name(login),
+				time=time_text,
+				name_color=RED if is_danger else WHITE,
+				time_color=time_color,
+			))
+
+		rows = self._collapse_middle(rows)
+		self._layout(rows)
 		self.rows = rows
-		# "alive" reflects the racing count once a round is on; in warm-up it is the
-		# number of players currently listed.
-		self.count = live.count if live.racing else len(rows)
 
 		if not rows:
 			await self.hide()
 			return
 		await self.display()
+
+	# ------------------------------------------------------------- helpers
+
+	@staticmethod
+	def _as_int(value):
+		try:
+			return int(value)
+		except (TypeError, ValueError):
+			return -1
+
+	@staticmethod
+	def _collapse_middle(rows):
+		"""Window a long field down to the leaders plus the trailing (danger) rows,
+		with a single gap marker standing in for the elided middle."""
+		if len(rows) <= MAX_ROWS:
+			return rows
+		tail = MAX_ROWS - HEAD_ROWS - 1
+		return rows[:HEAD_ROWS] + [dict(gap=True)] + rows[-tail:]
+
+	def _layout(self, rows):
+		"""Assign each row its y position and find the divider above the first
+		danger row (red name)."""
+		self.has_divider = False
+		self.divider_y = 0.0
+		for index, row in enumerate(rows):
+			row['y'] = START_Y - index * ROW_H
+			if not self.has_divider and not row.get('gap') and row.get('name_color') == RED:
+				self.has_divider = True
+				self.divider_y = row['y'] + 0.6
 
 	async def _name(self, login):
 		try:
@@ -97,13 +170,17 @@ class MatchHud(TemplateView):
 		"""Force-render the HUD with placeholder rows, ignoring match state. Used
 		by the //ko hud diagnostic to confirm the manialink renders at all. Shown
 		only to ``player`` when given, otherwise to everyone (the real path)."""
-		self.round_text = 'ROUND 1 / 5'
-		self.count = 2
-		self.danger_count = 1
+		self.match_text = 'MATCH 30'
+		self.round_text = '12/21'
+		self.players_count = 4
+		self.ko_text = '2 UNTIL 8 PLAYERS'
 		self.rows = [
-			dict(y=-12, rank=1, name='Test A', time='0.000', color='66FF66'),
-			dict(y=-16, rank=2, name='Test B', time='—', color='FF3333'),
+			dict(gap=False, rank=1, name='Test A', time='12.470', name_color=WHITE, time_color=LEADER),
+			dict(gap=False, rank=2, name='Test B', time='+0.031', name_color=WHITE, time_color=GREEN),
+			dict(gap=False, rank=3, name='Test C', time='+0.250', name_color=WHITE, time_color=GREEN),
+			dict(gap=False, rank=4, name='Test D', time='+0.500', name_color=RED, time_color=RED),
 		]
+		self._layout(self.rows)
 		if player is not None:
 			await self.display(player=player)
 		else:

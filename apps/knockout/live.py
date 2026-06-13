@@ -4,6 +4,8 @@ from pyplanet.apps.core.maniaplanet import callbacks as mp_signals
 from pyplanet.apps.core.trackmania import callbacks as tm_signals
 from pyplanet.core.events import Callback
 
+from .models import MatchInfo
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +107,9 @@ class LiveController:
 		self.phase = 'idle'
 		self.round = 0
 		self.total_rounds = 0
+		# 1-based number of the match being played, shown as the HUD title. Filled
+		# from the database at each map_start (count of recorded matches + 1).
+		self.match_number = 0
 		# Best lap time (ms) seen per login on the current map, from the finish
 		# callback. Populated during warm-up too, so the HUD can show times before
 		# any KO round data arrives. Reset each map.
@@ -185,6 +190,8 @@ class LiveController:
 		self.best_times = {}
 		# Only show the HUD while a Knockout mode is loaded.
 		self.is_knockout = await self._read_is_knockout()
+		# Number this match for the HUD title ("MATCH n").
+		self.match_number = await self._read_match_number()
 		# Cache the double-knockout threshold so danger highlighting matches how
 		# many players the mode will actually knock out this round.
 		self._double_until = await self._read_double_until()
@@ -213,6 +220,16 @@ class LiveController:
 		except Exception:
 			return True  # can't tell -> leave the HUD enabled
 		return 'knockout' in (script or '').lower()
+
+	async def _read_match_number(self):
+		"""The 1-based number of the match about to be played: the count of matches
+		already recorded plus one. DB-backed so it survives a plugin reload mid-cup.
+		Returns 0 (HUD shows "KNOCKOUT") if the count can't be read."""
+		try:
+			rows = list(await MatchInfo.execute(MatchInfo.select()))
+		except Exception:
+			return 0
+		return len(rows) + 1
 
 	# --------------------------------------------------- best-lap / roster
 

@@ -120,7 +120,7 @@ These are controlled by settings in PyPlanet:
 | `show_join` | `true` | Join notifications |
 | `show_knockout` | `true` | Knockout notifications |
 | `show_winner` | `true` | Winner notifications |
-| `show_match_hud` | `true` | Always-on left-side match HUD (round, players alive, KOs/round, live times) shown to everyone |
+| `show_match_hud` | `true` | Always-on left-side match HUD (match/round/players/KOs header + gap-to-leader order) shown to everyone |
 | `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third |
 | `show_cup_widget` | `false` | Live cup standings widget during an active cup (experimental) |
 | `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file |
@@ -129,18 +129,22 @@ These are controlled by settings in PyPlanet:
 ### Match HUD
 
 - **Live match HUD** (`show_match_hud`, **on by default**): an always-on panel on
-  the left of the screen, shown to racers and spectators alike, with the round
-  number, how many players are still alive, how many get knocked out this round,
-  and the running order with each player's time (bubble player(s) tinted red,
-  safe finishers green). It stays up for the whole Knockout while that mode is
-  loaded — including **warm-up**, where it lists the players on the server with
-  their best lap so far (from the standard finish callback) and fills in the
-  round/elimination detail once scored rounds begin. It only hides when the
-  loaded mode is not Knockout, or when nobody is on the server. The round number
-  needs the updated `Knockout.Script.txt` deployed to the dedicated server;
-  without it the HUD still works but the header reads `KNOCKOUT` instead of
-  `ROUND x / y`. Use `//ko hud` (admin) to print the HUD's live state and force a
-  test render when diagnosing.
+  the left of the screen, shown to racers and spectators alike. A header gives the
+  match number (`MATCH n`), the round (`x/y`), how many players are left, and the
+  KOs per round (`2 UNTIL 8 PLAYERS` while double-knockout is in effect, otherwise
+  `1`). Below it is the running order: the leader's absolute time, then each
+  player's **gap to the leader** (`+0.031`), with the elimination-bubble player(s)
+  tinted red below a divider. When more players are listed than fit, the middle is
+  collapsed to a `• • •` marker so the leaders and the danger zone stay visible.
+  It stays up for the whole Knockout while that mode is loaded — including
+  **warm-up**, where it lists the players on the server ordered by their best lap
+  so far (from the standard finish callback) and fills in the round/elimination
+  detail once scored rounds begin. It only hides when the loaded mode is not
+  Knockout, or when nobody is on the server. The `MATCH n` title counts recorded
+  matches in the database; the round number needs the updated `Knockout.Script.txt`
+  deployed to the dedicated server — without it the HUD still works but the round
+  reads `—`. Use `//ko hud` (admin) to print the HUD's live state and force a test
+  render when diagnosing.
 
 ### Streaming / broadcast features
 
@@ -185,7 +189,7 @@ For livestreamed nights, the app adds spectator-facing extras (all opt-in):
 - **"Script not found" errors** — verify the 4 script files are in the correct relative paths under `<tm2>/Scripts/`
 - **RoundsBase errors** — the TM2 base title pack isn't loading correctly
 - **Callbacks not firing** — make sure `S_UseLegacyXmlRpcCallbacks` is not set to `1` in your XML; PyPlanet overrides it to `0`
-- **Match HUD never appears** — confirm `show_match_hud` is `true` in `//settings` (it defaults on). Run `//ko hud`: the first line shows `enabled(cached)=… setting=…` (both should be `True`) and `phase=…`. The HUD only shows while a **Knockout** mode is loaded and at least one player is on the server. During warm-up it lists players with their best lap; `phase=idle` there is normal. If the `callbacks:` line shows `KORoundOrder=0`/`KORoundStart=0` during a scored round, the stock mode script is loaded instead of the updated `Knockout.Script.txt` (so the round number and live order won't populate). A `Last real HUD refresh error` line, if present, is the exact reason the panel is blank.
+- **Match HUD never appears** — confirm `show_match_hud` is `true` in `//settings` (it defaults on). Run `//ko hud`: the first line shows `enabled(cached)=… setting=…` (both should be `True`) and `phase=…`. The HUD only shows while a **Knockout** mode is loaded and at least one player is on the server. During warm-up it lists players with their best lap; `phase=idle` there is normal. If the `callbacks:` line shows `KORoundOrder=0`/`KORoundStart=0` during a scored round, the stock mode script is loaded instead of the updated `Knockout.Script.txt` (so the round reads `—` and the live order/gaps won't populate). A `Last real HUD refresh error` line, if present, is the exact reason the panel is blank.
 
 ## Knockout Cup Manager
 
