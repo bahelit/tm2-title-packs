@@ -107,6 +107,13 @@ class LiveController:
 		self._double_until = 0
 		self._order_signal = None
 		self._round_signal = None
+		# Diagnostics surfaced by //ko hud: how many of each mode callback we have
+		# received, and the last HUD refresh error (if any).
+		self.callbacks_seen = {
+			'KOPlayerAdded': 0, 'KOPlayerRemoved': 0, 'KOSendWinner': 0,
+			'KORoundOrder': 0, 'KORoundStart': 0,
+		}
+		self.last_hud_error = None
 
 	@property
 	def count(self):
@@ -179,12 +186,14 @@ class LiveController:
 	# ------------------------------------------------- routed from app handlers
 
 	async def on_player_added(self, login):
+		self.callbacks_seen['KOPlayerAdded'] += 1
 		if login and login not in self.racing:
 			self.racing.append(login)
 		self.phase = 'showdown' if self.count == 2 else 'racing'
 		await self._refresh_overlays()
 
 	async def on_player_removed(self, login):
+		self.callbacks_seen['KOPlayerRemoved'] += 1
 		if login in self.racing:
 			self.racing.remove(login)
 		self.order = [e for e in self.order if e['login'] != login]
@@ -198,6 +207,7 @@ class LiveController:
 		await self._refresh_overlays()
 
 	async def on_winner(self, login):
+		self.callbacks_seen['KOSendWinner'] += 1
 		self.phase = 'ended'
 		await self._flash_winner(login)
 		await self._mark('winner', login)
@@ -206,6 +216,7 @@ class LiveController:
 	# ------------------------------------------------------- owned callbacks
 
 	async def on_round_order(self, order=None, **kwargs):
+		self.callbacks_seen['KORoundOrder'] += 1
 		self.order = order or []
 		# The mode only emits KOPlayerAdded at the start of a fresh match, so if
 		# the plugin started/reloaded mid-match we never learned who is racing and
@@ -218,6 +229,7 @@ class LiveController:
 		await self._refresh_overlays()
 
 	async def on_round_start(self, round=0, total=0, **kwargs):
+		self.callbacks_seen['KORoundStart'] += 1
 		self.round = round
 		self.total_rounds = total
 		await self._refresh_overlays()
@@ -271,7 +283,9 @@ class LiveController:
 		if getattr(self.app, '_match_hud_enabled', False) and hud is not None:
 			try:
 				await hud.refresh(self)
-			except Exception:
+				self.last_hud_error = None
+			except Exception as exc:
+				self.last_hud_error = repr(exc)
 				logger.exception('Knockout: failed to refresh match HUD')
 
 	async def _player_name(self, login):

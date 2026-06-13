@@ -276,6 +276,15 @@ class CupCommands:
 				enabled, phase, count, rnd),
 			player,
 		)
+		# Per-callback receipt counts reveal whether the mode's callbacks reach the
+		# plugin at all (all zero => the mode/server is not delivering them).
+		seen = getattr(live, 'callbacks_seen', {}) or {}
+		seen_str = ' '.join('{}={}'.format(name, seen.get(name, 0)) for name in (
+			'KOPlayerAdded', 'KOPlayerRemoved', 'KORoundOrder', 'KORoundStart', 'KOSendWinner'))
+		await self.instance.chat('$bbb>>> callbacks: $fff{}'.format(seen_str), player)
+		last_err = getattr(live, 'last_hud_error', None)
+		if last_err:
+			await self.instance.chat('$f00>>> last HUD refresh error: {}'.format(last_err), player)
 		hud = getattr(app, 'hud', None)
 		if hud is None:
 			await self.instance.chat('$f00>>> No HUD view (plugin not fully started?).', player)
