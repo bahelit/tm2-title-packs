@@ -179,6 +179,16 @@ class LiveController:
 		# Reset the live picture whenever a new map (and so a new match) starts.
 		self.app.context.signals.listen(mp_signals.map.map_start, self.on_map_start)
 
+		# Paint the HUD once now, so it appears immediately on startup/reload for
+		# whoever is already connected -- without waiting for the next map_start,
+		# finish, or connect. Otherwise the always-on HUD only shows after one of
+		# those fires (or after //ko hud force-renders it). Seed the per-map state
+		# the same way on_map_start does so the first paint has the right context.
+		self.is_knockout = await self._read_is_knockout()
+		self.match_number = await self._read_match_number()
+		self._double_until = await self._read_double_until()
+		await self._refresh_overlays()
+
 	# ----------------------------------------------------------------- lifecycle
 
 	async def on_map_start(self, *args, **kwargs):
