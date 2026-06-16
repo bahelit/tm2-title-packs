@@ -1,60 +1,34 @@
 # ManiaPlanet scripts
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0) ![GitHub contributors](https://img.shields.io/github/contributors/bahelit/tm2-title-packs.svg) ![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/bahelit/tm2-title-packs.svg)
 
-All ManiaScript libraries written by Dommy for ManiaPlanet gaming system. Files include sources of ShootMania Galaxy pack game modes and libraries used by TrackMania² Pursuit game mode. Feel free to use them for your projects, but remember to credit Dommy in your final work. If you got any ideas or suggestions for my work, or you want to contribute to the translations collection, don't be afraid to open an issue or do a pull request! ❤️️
+ManiaScript libraries and game modes for the ManiaPlanet gaming system, plus a
+PyPlanet app that runs **Knockout** nights (matches, cups, and the daily Bowl of
+the Evening). Originally written by Dommy — credit Dommy if you reuse the scripts.
+Issues and PRs welcome. ❤️
 
-## Useful links
+**Links:** [ManiaPlanet](http://maniaplanet.com/) · [ManiaPark](https://maniapark.com/) · [TM Exchange](https://tm.mania.exchange/) · [PyPlanet](https://pypla.net/en/latest/index.html)
 
-* [ManiaPlanet - platform for TrackMania² and ShootMania games by Nadeo](http://maniaplanet.com/)
-* [ManiaPark - Find car models, car skins, texture mods and other community content](https://maniapark.com/)
-* [TM Exchange - Find tracks, replays and community content](https://tm.mania.exchange/)
-* [PyPlanet -  A Maniaplanet/Trackmania Dedicated Server Controller](https://pypla.net/en/latest/index.html)
+---
 
-## Knockout mode with PyPlanet
+## Quick start (Knockout)
 
 ### Prerequisites
 
-1. **TrackMania Nations Forever** — free on Steam
-2. **TrackMania Stadium 2 (TM2)** — the main title pack
+1. **TrackMania Nations Forever** — [free on Steam](https://store.steampowered.com/app/11020/TrackMania_Nations_Forever/)
+2. **TrackMania Stadium 2 (TM2)** — [on sale on Steam](https://store.steampowered.com/app/232910/TrackMania_Stadium/)
 3. **Dedicated Server** — running the TM2 title pack
 4. **PyPlanet** — installed and connected to the server
 
-### Files needed
-
-Copy the PyPlanet app (the whole `apps/knockout/` folder) and the game-mode scripts to your server:
+### 1. Copy files to the server
 
 ```
-<pyplanet>/apps/knockout/                       # PyPlanet app (copy the ENTIRE folder)
-<pyplanet>/config.yaml                          # PyPlanet config (add app to APPS list)
-<tm2>/Scripts/Modes/TrackMania/Knockout.Script.txt   # Game mode script
-<tm2>/Scripts/Libs/domino54/SentenceBank.Script.txt  # Dependency
-<tm2>/Scripts/Libs/domino54/Translations.Script.txt  # Dependency
+apps/knockout/                                          -> <pyplanet>/apps/knockout/   (whole folder)
+Scripts/Modes/TrackMania/Knockout.Script.txt            -> <tm2>/Scripts/Modes/TrackMania/
+Scripts/Libs/domino54/SentenceBank.Script.txt           -> <tm2>/Scripts/Libs/domino54/
+Scripts/Libs/domino54/Translations.Script.txt           -> <tm2>/Scripts/Libs/domino54/
 ```
 
-`apps/knockout/` is a Python package — copy the directory and everything in it:
-
-```
-apps/knockout/
-  __init__.py            # AppConfig: notifications + cup wiring
-  capture.py             # records each map's standings to the database
-  cup.py                 # cup lifecycle (start/stop, mapcount, edition, scoremode)
-  commands.py            # //cup and /cup chat commands
-  results.py             # cross-map score summation + results UI
-  score_modes.py         # points-by-placement tables
-  config.py              # loads the cup presets JSON
-  payouts.py             # planet payouts by placement
-  presets_example.json   # sample presets file (copy & edit, then set cup_presets_path)
-  models/                # database models (cup, match, player score)
-  views/                 # results / matches windows + live widget
-  templates/             # widget ManiaLink template
-```
-
-PyPlanet creates the database tables automatically on first start; there is nothing to
-migrate by hand.
-
-### Step 1: Register the PyPlanet app
-
-In your PyPlanet `config.yaml`, add `apps.knockout` to the `APPS` list:
+### 2. Register the app — `config.yaml`
 
 ```yaml
 settings:
@@ -64,12 +38,12 @@ settings:
       - 'core.admin'
       - 'core.chat'
       - 'core.players'
-      - 'apps.knockout'  # <-- add this line
+      - 'apps.knockout'   # <-- add
 ```
 
-### Step 2: Update the playlist XML
+### 3. Set the mode in the playlist XML
 
-In your map playlist XML (`playlist.ini` or `.xml`), set the script name and add Knockout settings. Remove `S_UseLegacyXmlRpcCallbacks` so PyPlanet controls callback format:
+Set the script and remove `S_UseLegacyXmlRpcCallbacks` (PyPlanet forces it to `0`):
 
 ```xml
 <gameinfos>
@@ -82,182 +56,110 @@ In your map playlist XML (`playlist.ini` or `.xml`), set the script name and add
   <setting name="S_DoubleKnockUntil" type="integer" value="20"/>
   <setting name="S_PracticeRounds" type="integer" value="0"/>
   <setting name="S_EnableShields" type="boolean" value="0"/>
-  <setting name="S_DebugBotsCount" type="integer" value="0"/>
   <setting name="S_FinishTimeout" type="integer" value="20"/>
-  <setting name="S_ForceLapsNb" type="integer" value="0"/>
-  <setting name="S_AdminHoldStart" type="boolean" value="0"/>
-  <setting name="S_AdminSetPause" type="boolean" value="0"/>
-  <setting name="S_ShowMultilapInfo" type="boolean" value="1"/>
-  <setting name="S_CustomLayerPath" type="text" value=""/>
 </script_settings>
 ```
 
-### Step 3: Restart PyPlanet
+### 4. Restart
 
 ```bash
 sudo systemctl restart pyplanet
 ```
 
-### What the app does
+PyPlanet creates its database tables on first start — nothing to migrate by hand.
 
-The Knockout app listens for scripted callbacks and sends chat notifications:
+> **Upgrading an existing DB:** the `save_to_season` toggle adds a `count_in_season`
+> column. PyPlanet auto-creates new *tables* but not new *columns*, so run once:
+> `ALTER TABLE knockout_cup ADD COLUMN count_in_season INTEGER NOT NULL DEFAULT 1;`
 
-| Callback | Notification |
-|---|---|
-| `KOPlayerAdded` | `$f90>>> {name} joined Knockout!` |
-| `KOPlayerRemoved` | `$f00>>> {name} was knocked out!` |
-| `KOSendWinner` | `$0f0>>> {name} is the winner!` |
+---
 
-The mode also emits callbacks consumed by the broadcast overlays (no chat
-notification): `KORoundOrder` (live running order each round, for danger
-highlighting), `KOShieldAwarded`, and `KOShieldUsed`.
+## Commands
 
-These are controlled by settings in PyPlanet:
-
-| Setting | Default | Description |
-|---|---|---|
-| `notifications` | `true` | Master switch for all Knockout messages |
-| `show_join` | `true` | Join notifications |
-| `show_knockout` | `true` | Knockout notifications |
-| `show_winner` | `true` | Winner notifications |
-| `show_match_hud` | `true` | Always-on left-side match HUD (match/round/players/KOs header + gap-to-leader order) shown to everyone |
-| `show_season_points` | `true` | Show each racer's running season total (active cup's series) as a PTS column on the match HUD; only appears while a cup is active |
-| `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third |
-| `show_cup_widget` | `false` | Live cup standings widget during an active cup (experimental) |
-| `save_to_season` | `true` | When off, cups started from now on are excluded from the season leaderboard (their own results still record) |
-| `cotd_cutoff_time` | `"17:00"` | Local `HH:MM` when Bowl of the Evening practice ends and the knockout begins |
-| `cotd_fastest_shield` | `true` | Grant the fastest practice time a one-time shield (save) in the knockout |
-| `cotd_countdown_seconds` | `900` | Seconds between practice closing and the knockout starting (default 15 min); set live with `//cotd countdown <seconds>` |
-| `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file |
-| `vod_markers_path` | `""` | Path to the VOD markers file (blank = disabled) |
-
-> **Server timezone:** Bowl of the Evening timing uses the dedicated server's local clock (`cotd_cutoff_time`
-> is interpreted in server-local time), since the game mode itself has no wall-clock access.
-
-> **Existing databases:** the `save_to_season` toggle adds a `count_in_season` column to the
-> `knockout_cup` table. PyPlanet auto-creates new *tables* but not new *columns*, so on a
-> pre-existing database run `ALTER TABLE knockout_cup ADD COLUMN count_in_season INTEGER NOT NULL
-> DEFAULT 1;` once (fresh installs need nothing).
-
-### Match HUD
-
-- **Live match HUD** (`show_match_hud`, **on by default**): an always-on panel on
-  the left of the screen, shown to racers and spectators alike. A header gives the
-  match number (`MATCH n`), the round (`x/y`), how many players are left, and the
-  KOs per round (`2 UNTIL 8 PLAYERS` while double-knockout is in effect, otherwise
-  `1`). Below it is the running order: the leader's absolute time, then each
-  player's **gap to the leader** (`+0.031`), with the elimination-bubble player(s)
-  tinted red below a divider. When more players are listed than fit, the middle is
-  collapsed to a `• • •` marker so the leaders and the danger zone stay visible.
-  It stays up for the whole Knockout while that mode is loaded — including
-  **warm-up**, where it lists the players on the server ordered by their best lap
-  so far (from the standard finish callback) and fills in the round/elimination
-  detail once scored rounds begin. It only hides when the loaded mode is not
-  Knockout, or when nobody is on the server. The `MATCH n` title counts recorded
-  matches in the database; the round number needs the updated `Knockout.Script.txt`
-  deployed to the dedicated server — without it the HUD still works but the round
-  reads `—`. Use `//ko hud` (admin) to print the HUD's live state and force a test
-  render when diagnosing.
-
-### Streaming / broadcast features
-
-For livestreamed nights, the app adds spectator-facing extras (all opt-in):
-
-- **Live ticker + danger highlighting** (`show_overlays`): a "players remaining"
-  ticker, with the player(s) currently on the elimination bubble tinted red,
-  driven by the mode's `KORoundOrder` callback. The final two trigger a
-  "showdown" treatment.
-- **Elimination lower-third** (`show_overlays`): a transient banner on each
-  knockout, the round winner, and shield events.
-- **Earned shields** (`S_EnableShields`): the fastest finisher of a round banks a
-  one-time save; it auto-spends to keep them in when they'd otherwise be knocked
-  out (the elimination passes to the next-slowest finisher). Shields never save a
-  DNF or give-up.
-- **Practice rounds** (`S_PracticeRounds`): the opening N rounds run with no
-  eliminations, so a bad spawn lap doesn't end someone's night instantly.
-- **Season leaderboard & stats** (`/cup season`, `/cup stats <login>`): totals
-  across every cup — points, wins, podiums — with per-player history.
-- **VOD highlight markers** (`vod_markers_enabled` + `vod_markers_path`): a file
-  of timestamped events (map starts, eliminations, showdowns, winners, shields)
-  for fast clipping afterwards. `//ko streamstart` sets the stream-relative clock.
-
-### Knockout game settings
-
-| Setting | Default | Description |
-|---|---|---|
-| `S_RoundsPerMap` | `0` | Number of rounds per map (0 = infinite) |
-| `S_DoubleKnockUntil` | `20` | Knock 2 players simultaneously until this count (0 = disabled) |
-| `S_PracticeRounds` | `0` | Opening rounds with no eliminations (0 = disabled) |
-| `S_EnableShields` | `false` | Earned shields: the round winner banks a one-time save, auto-spent to avoid a knockout |
-| `S_DebugBotsCount` | `0` | Fake bot players for testing |
-| `S_FinishTimeout` | `20` | Time limit between rounds in seconds |
-| `S_ForceLapsNb` | `0` | Force laps per round (0 = 1 lap) |
-| `S_AdminHoldStart` | `false` | Allow admins to pause next round start |
-| `S_AdminSetPause` | `false` | Allow admins to pause match before next round |
-| `S_ShowMultilapInfo` | `true` | Show multi-lap info on screen |
-| `S_CustomLayerPath` | `""` | Optional path to custom background layer XML |
-| `S_PreShieldLogins` | `""` | Logins (comma/space separated) granted a shield at match start; set automatically by the Bowl of the Evening handoff for the fastest-practice player. Requires `S_EnableShields`. |
-
-### Troubleshooting
-
-- **"Script not found" errors** — verify the 4 script files are in the correct relative paths under `<tm2>/Scripts/`
-- **RoundsBase errors** — the TM2 base title pack isn't loading correctly
-- **Callbacks not firing** — make sure `S_UseLegacyXmlRpcCallbacks` is not set to `1` in your XML; PyPlanet overrides it to `0`
-- **Match HUD never appears** — confirm `show_match_hud` is `true` in `//settings` (it defaults on). Run `//ko hud`: the first line shows `enabled(cached)=… setting=…` (both should be `True`) and `phase=…`. The HUD only shows while a **Knockout** mode is loaded and at least one player is on the server. During warm-up it lists players with their best lap; `phase=idle` there is normal. If the `callbacks:` line shows `KORoundOrder=0`/`KORoundStart=0` during a scored round, the stock mode script is loaded instead of the updated `Knockout.Script.txt` (so the round reads `—` and the live order/gaps won't populate). A `Last real HUD refresh error` line, if present, is the exact reason the panel is blank.
-
-## Knockout Cup Manager
-
-The `apps.knockout` app also runs **cups**: it records each map's result and sums
-scores across a list of maps into an overall standing. This is built into the app —
-you do **not** need the separate `pyplanet-cup_manager` plugin.
-
-### How it works
-
-At the end of each map the Knockout mode emits a `KOMatchStandings` callback with every
-player's final survival score. The app stores one match + per-player rows in its
-database, and (while a cup is running) links the map to the active cup. Each map's
-finishing order is turned into cup points via a **score mode** table, and points are
-summed across the cup's maps. All cup state is persisted, so it survives a PyPlanet
-restart.
-
-> Requires the updated `Knockout.Script.txt` from this repo (it adds the
-> `KOMatchStandings` callback). The weekly map list comes from your dedicated-server
-> matchsettings file — the cup just tracks results across whatever maps it rotates.
-
-### Commands
-
-Admin (`//`):
+**Admin (`//`)**
 
 | Command | Description |
 |---|---|
-| `//cup on [key] [name]` | Start a cup. `key` can match a preset name; `name` is optional. |
+| `//cup on [key] [name]` | Start a cup (`key` can match a preset). |
 | `//cup off` | Stop the active cup. |
-| `//cup setup <preset>` | Push a preset's mode script + settings to the server. |
-| `//cup mapcount <n>` | Set the number of maps (cup auto-completes when reached; 0 = open-ended). |
-| `//cup edition <n>` | Set the edition/week number. |
-| `//cup scoremode <id>` | Set the points table (`default`, `f1`, `flat`, `survival`). |
-| `//cup edit <index>` | Toggle whether the map at that index counts towards totals. |
-| `//cup export` | Write CSV + Discord-markdown files of the standings. |
-| `//cup pay [payout]` | Pay planets to the standings (requires `cup_payouts_enabled`). |
-| `//cotd on [HH:MM]` | Start a Bowl of the Evening (TimeAttack practice until the cutoff, then knockout). Optional time overrides `cotd_cutoff_time` for this run. |
-| `//cotd off` | Stop the Bowl of the Evening. |
-| `//cotd start` | End practice now and start the knockout immediately. |
-| `//cotd countdown <seconds>` | Set the countdown between practice closing and the knockout (e.g. `30` for testing, default 900 = 15 min). |
-| `//ko streamstart` | Mark t=0 for VOD highlight markers (stream-relative clock). |
-| `//ko mark <note>` | Write a manual VOD highlight marker. |
+| `//cup setup <preset>` | Push a preset's mode script + settings. |
+| `//cup mapcount <n>` | Maps in the cup (0 = open-ended). |
+| `//cup edition <n>` | Set edition/week number. |
+| `//cup scoremode <id>` | Points table (`default`, `f1`, `flat`, `survival`). |
+| `//cup edit <index>` | Toggle whether a map counts. |
+| `//cup export` | Write CSV + Discord-markdown standings. |
+| `//cup pay [payout]` | Pay planets (needs `cup_payouts_enabled`). |
+| `//cotd on [HH:MM]` | Start a Bowl of the Evening (optional cutoff override). |
+| `//cotd off` | Cancel it. |
+| `//cotd start` | End practice now, start the knockout. |
+| `//cotd countdown <seconds>` | Set practice→knockout countdown (default 900). |
+| `//ko hud` | Print HUD live state + force a test render. |
+| `//ko streamstart` | Mark t=0 for VOD markers. |
+| `//ko mark <note>` | Write a manual VOD marker. |
 
-Public (`/`):
+**Public (`/`)**
 
 | Command | Description |
 |---|---|
-| `/cup status` | Show the active cup and progress. |
-| `/cup results` | Open the cup standings window. |
-| `/cup matches` | List the maps played in the cup. |
-| `/cup season [key]` | Open the season leaderboard across all cups (optionally one cup key). |
-| `/cup stats <login>` | Open a player's cup history (cups, wins, podiums, places). |
-| `/cotd status` | Show the Bowl of the Evening phase, cutoff time, and current fastest practice time. |
+| `/cup status` | Active cup and progress. |
+| `/cup results` | Cup standings window. |
+| `/cup matches` | Maps played in the cup. |
+| `/cup season [key]` | Season leaderboard across all cups. |
+| `/cup stats <login>` | A player's cup history. |
+| `/cotd status` | Bowl phase, cutoff, current fastest practice time. |
 
-### Score modes
+---
+
+## Settings (PyPlanet `//settings`)
+
+**App / notifications**
+
+| Setting | Default | Description |
+|---|---|---|
+| `notifications` | `true` | Master switch for all Knockout messages. |
+| `show_join` / `show_knockout` / `show_winner` | `true` | Join / knockout / winner chat notifications. |
+| `show_match_hud` | `true` | Always-on left-side match HUD (match/round/players/KOs + gap-to-leader order). |
+| `show_season_points` | `true` | Add a season-total PTS column to the HUD during a cup. |
+| `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third. |
+| `show_cup_widget` | `false` | Live cup standings widget (experimental). |
+| `save_to_season` | `true` | Off = new cups excluded from the season leaderboard. |
+| `cotd_cutoff_time` | `"17:00"` | Server-local `HH:MM` when practice ends and the knockout begins. |
+| `cotd_countdown_seconds` | `900` | Seconds between practice closing and knockout start. |
+| `cotd_fastest_shield` | `true` | Grant the fastest practice time a one-time shield. |
+| `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file. |
+| `vod_markers_path` | `""` | Path to the VOD markers file (blank = disabled). |
+
+> Bowl of the Evening timing uses the dedicated server's local clock — the game mode has no wall-clock access.
+
+**Cup**
+
+| Setting | Default | Description |
+|---|---|---|
+| `cup_presets_path` | `""` | Path to the presets JSON file. |
+| `cup_default_score_mode` | `default` | Score mode for cups started without a preset. |
+| `cup_payouts_enabled` | `false` | Allow `//cup pay` to send real planets. |
+| `cup_export_path` | `""` | Directory for `//cup export` files (blank = working dir). |
+
+**Game mode (`<script_settings>` in the playlist XML)**
+
+| Setting | Default | Description |
+|---|---|---|
+| `S_RoundsPerMap` | `0` | Rounds per map (0 = infinite). |
+| `S_DoubleKnockUntil` | `20` | Knock 2 players at once until this count (0 = off). |
+| `S_PracticeRounds` | `0` | Opening rounds with no eliminations (0 = off). |
+| `S_EnableShields` | `false` | Round winner banks a one-time auto-spent save. |
+| `S_DebugBotsCount` | `0` | Fake bots for testing. |
+| `S_FinishTimeout` | `20` | Seconds between rounds. |
+| `S_ForceLapsNb` | `0` | Laps per round (0 = 1). |
+| `S_AdminHoldStart` | `false` | Admins can pause next round start. |
+| `S_AdminSetPause` | `false` | Admins can pause before next round. |
+| `S_ShowMultilapInfo` | `true` | Show multi-lap info on screen. |
+| `S_CustomLayerPath` | `""` | Optional custom background layer XML. |
+| `S_PreShieldLogins` | `""` | Logins granted a shield at match start (set by the Bowl handoff; needs `S_EnableShields`). |
+
+---
+
+## Score modes
 
 | Id | Points by placement |
 |---|---|
@@ -268,65 +170,67 @@ Public (`/`):
 
 Tied players (same survival score on a map) share a placement and its points.
 
-### Presets file
+---
 
-Point the `cup_presets_path` setting at a JSON file (see
-`apps/knockout/presets_example.json`) with three sections:
+## Workflows
+
+**Weekly cup**
+
+1. Update the matchsettings map list and restart the server.
+2. `//cup setup <preset>` (optional if settings already applied).
+3. `//cup on weekly` to start collecting results.
+4. Play; `/cup results` shows running standings.
+5. Auto-completes at `mapcount` (or `//cup off`); `//cup export`, then `//cup pay` if enabled.
+
+**Bowl of the Evening** — daily one-map event: the map runs as open TimeAttack practice,
+then at `cotd_cutoff_time` the app switches the *same map* into Knockout and runs it to a
+single winner. Records as a one-map cup with `cup_key = cotd`, so each evening is an
+edition (`/cup season cotd`, `/cup stats <login>` track the leaderboard).
+
+1. Pick the day's map (matchsettings / current map).
+2. `//cotd on` (or `//cotd on 18:30` to override the cutoff once).
+3. At the cutoff, practice closes and a countdown runs (`cotd_countdown_seconds`); the
+   fastest practice time gets a shield if `cotd_fastest_shield` is on.
+4. The knockout plays to a winner, records into the `cotd` cup, and auto-completes.
+5. `//cotd start` skips the countdown; `//cotd off` cancels.
+
+---
+
+## Presets file
+
+Point `cup_presets_path` at a JSON file (see `apps/knockout/presets_example.json`):
 
 - **names** — cup definitions: display name + linked `preset`/`payout`/`scoremode`/`mapcount`.
 - **presets** — a mode `script` and `settings` to push with `//cup setup`.
 - **payouts** — planet amounts by placement, e.g. `[500, 250, 100]`.
 
-`//cup on weekly` then pulls the name, score mode and map count from the `weekly`
-definition; `//cup setup knockout_rotate` applies that preset's script/settings.
+`//cup on weekly` pulls name/score mode/map count from the `weekly` definition;
+`//cup setup <preset>` applies that preset's script + settings.
 
-### Cup settings (PyPlanet)
+---
 
-| Setting | Default | Description |
-|---|---|---|
-| `cup_presets_path` | `""` | Path to the presets JSON file |
-| `cup_default_score_mode` | `default` | Score mode for cups started without a preset |
-| `cup_payouts_enabled` | `false` | Allow `//cup pay` to send real planets |
-| `cup_export_path` | `""` | Directory for `//cup export` files (blank = working dir) |
-| `show_cup_widget` | `false` | Show an experimental live standings widget |
+## Callbacks
 
-### Weekly cup workflow
+The mode emits these for the app and overlays:
 
-1. Update the matchsettings map list for the week and restart the server.
-2. `//cup setup <preset>` to apply the cup's mode settings (optional if already set).
-3. `//cup on weekly` to start collecting results.
-4. Play through the maps; `/cup results` shows running standings.
-5. The cup auto-completes at `mapcount` (or `//cup off`); `//cup export` saves the
-   results, and `//cup pay` distributes planets if enabled.
+| Callback | Use |
+|---|---|
+| `KOPlayerAdded` / `KOPlayerRemoved` / `KOSendWinner` | Join / knockout / winner chat notifications. |
+| `KOMatchStandings` | Final per-player survival scores → cup points (required for cups). |
+| `KORoundOrder` | Live running order each round (danger highlighting). |
+| `KOShieldAwarded` / `KOShieldUsed` | Shield events for overlays. |
 
-## Bowl of the Evening
+> Cups and the live order need the updated `Knockout.Script.txt` from this repo. With the
+> stock mode script the HUD still works but the round reads `—` and gaps won't populate.
 
-A daily one-map event modelled on TM2020's Cup of the Day, scaled for a single server (no
-seeded divisions). The day's map runs as open **TimeAttack practice** so everyone can grind
-their best time; at a fixed local time (default **17:00**) the app automatically switches the
-*same map* into Knockout and runs it down to a single winner. Because the game mode has no
-wall-clock access, the app owns the clock and drives the handoff.
+---
 
-It records as a one-map cup with `cup_key = cotd`, so each evening becomes an edition and the
-season views (`/cup season cotd`, `/cup stats <login>`) become your running Bowl leaderboard.
+## Troubleshooting
 
-> The commands and settings keep the short `cotd` prefix (`//cotd …`, `cotd_*`).
-
-**Flow**
-
-1. Pick the day's map (set the matchsettings / current map as usual).
-2. `//cotd on` (optionally `//cotd on 18:30` to override the cutoff for one run). The server
-   loads TimeAttack and practice begins; the app tracks each player's best practice time.
-3. At `cotd_cutoff_time` practice closes and a **15-minute countdown** begins (configurable via
-   `cotd_countdown_seconds` / `//cotd countdown <seconds>` — set `30` for quick testing). The
-   countdown re-announces as it ticks down, then the app switches the same map into Knockout. If
-   `cotd_fastest_shield` is on, the fastest practice time is granted a one-time shield (via
-   `S_PreShieldLogins`) so a hot lap earns one save in the knockout.
-4. The knockout plays to a winner; the result records into the `cotd` cup and auto-completes
-   it (and feeds the season leaderboard unless `save_to_season` is off).
-5. `//cotd start` ends practice and skips the countdown to start the knockout immediately;
-   `//cotd off` cancels.
-
-**Settings:** `cotd_cutoff_time` (default `"17:00"`), `cotd_countdown_seconds` (default `900`),
-and `cotd_fastest_shield` (default `true`). The cutoff is interpreted in the dedicated server's
-local timezone.
+- **"Script not found"** — check the 4 script files are at the right paths under `<tm2>/Scripts/`.
+- **Callbacks not firing** — ensure `S_UseLegacyXmlRpcCallbacks` isn't `1` (PyPlanet forces `0`).
+- **Match HUD blank** — confirm `show_match_hud` is `true`, then run `//ko hud`: the first line
+  should read `enabled(cached)=True setting=True`. The HUD only shows while a Knockout mode is
+  loaded with a player present. `KORoundOrder=0`/`KORoundStart=0` during a scored round means the
+  stock mode script is loaded instead of this repo's. A `Last real HUD refresh error` line, if
+  shown, is the exact reason it's blank.
