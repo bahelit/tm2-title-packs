@@ -17,6 +17,7 @@ class CupController:
 		self.active_cup = None
 
 	async def on_start(self):
+		await self._ensure_schema()
 		rows = list(await CupInfo.execute(
 			CupInfo.select().where(CupInfo.is_active == True).order_by(CupInfo.id.desc())
 		))
@@ -24,6 +25,38 @@ class CupController:
 		if self.active_cup:
 			logger.info('Knockout: resumed active cup "%s" (edition %s)',
 				self.active_cup.name, self.active_cup.edition)
+
+	async def _ensure_schema(self):
+		"""Self-healing schema guard for the knockout_cup table.
+
+		PyPlanet auto-creates missing *tables* on start but never adds new
+		*columns* to a table that already exists. Databases created before the
+		season-save toggle therefore lack ``count_in_season`` and crash the very
+		first SELECT in ``on_start``. Add any missing column here so a restart
+		repairs the schema without manual SQL or a migration framework.
+
+		Idempotent: each column is only added when introspection shows it absent.
+		"""
+		# (column_name, column DDL) pairs to reconcile against the live table.
+		expected = [
+			('count_in_season', 'TINYINT(1) NOT NULL DEFAULT 1'),
+		]
+		manager = CupInfo.objects
+		database = manager.database
+		try:
+			with manager.allow_sync():
+				existing = {col.name for col in database.get_columns('knockout_cup')}
+				for name, ddl in expected:
+					if name in existing:
+						continue
+					database.execute_sql(
+						'ALTER TABLE `knockout_cup` ADD COLUMN `{}` {}'.format(name, ddl)
+					)
+					logger.info('Knockout: added missing column knockout_cup.%s', name)
+		except Exception:
+			# Don't take the whole app down over the guard itself; the original
+			# query will still surface a clear error if a column is truly missing.
+			logger.exception('Knockout: schema guard for knockout_cup failed')
 
 	# ---------------------------------------------------------------- lifecycle
 
