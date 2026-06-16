@@ -47,6 +47,7 @@ class MatchHud(TemplateView):
 		self.rows = []
 		self.has_divider = False
 		self.divider_y = 0.0
+		self.show_season = False
 
 	async def get_context_data(self):
 		data = await super().get_context_data()
@@ -59,6 +60,17 @@ class MatchHud(TemplateView):
 		data['divider_y'] = self.divider_y
 		# Background height is precomputed so the template never does float math.
 		data['bg_height'] = 22.0 + len(self.rows) * ROW_H
+		# Season column: widen the panel and shift the time column left to make room
+		# for a right-hand points column. All geometry is precomputed here so the
+		# template stays arithmetic-free.
+		data['show_season'] = self.show_season
+		bg_width = 64.0 if self.show_season else 54.0
+		data['bg_width'] = bg_width
+		data['center_x'] = bg_width / 2.0
+		data['header_val_x'] = bg_width - 2.0
+		data['divider_w'] = bg_width - 4.0
+		data['time_x'] = 50.0 if self.show_season else 52.0
+		data['pts_x'] = 62.0
 		return data
 
 	async def refresh(self, live):
@@ -74,6 +86,14 @@ class MatchHud(TemplateView):
 		self.match_text = match_label(getattr(live, 'match_number', 0))
 		self.round_text = round_value(getattr(live, 'round', 0), getattr(live, 'total_rounds', 0))
 		danger = set(live.danger_logins())
+
+		# Season column shows only when enabled and a cup with totals is active.
+		season = getattr(live, 'season_points', None) or {}
+		try:
+			show_season = bool(season) and await self.app.setting_show_season_points.get_value()
+		except Exception:
+			show_season = False
+		self.show_season = show_season
 
 		# Collect (login, time_ms, finished) in display order: live round order when
 		# a round is on, otherwise the warm-up roster sorted by best lap.
@@ -119,6 +139,7 @@ class MatchHud(TemplateView):
 				time=time_text,
 				name_color=RED if is_danger else WHITE,
 				time_color=time_color,
+				season_points=(season.get(login, 0) if show_season else None),
 			))
 
 		rows = self._collapse_middle(rows)
@@ -174,6 +195,7 @@ class MatchHud(TemplateView):
 		self.round_text = '12/21'
 		self.players_count = 4
 		self.ko_text = '2 UNTIL 8 PLAYERS'
+		self.show_season = False
 		self.rows = [
 			dict(gap=False, rank=1, name='Test A', time='12.470', name_color=WHITE, time_color=LEADER),
 			dict(gap=False, rank=2, name='Test B', time='+0.031', name_color=WHITE, time_color=GREEN),

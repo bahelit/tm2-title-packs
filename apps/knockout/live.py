@@ -114,6 +114,11 @@ class LiveController:
 		# callback. Populated during warm-up too, so the HUD can show times before
 		# any KO round data arrives. Reset each map.
 		self.best_times = {}
+		# Running season total (login -> cup points) for the active cup's series,
+		# shown as the HUD's season column. Cached because compute_season aggregates
+		# every cup/match and the HUD refreshes on every live event; only refreshed
+		# on the infrequent paths (map start, match recorded, cup start/stop).
+		self.season_points = {}
 		# Whether the current mode script is a Knockout mode. The HUD is always-on
 		# during Knockout but should not appear in other modes; default True so it
 		# shows until the first map_start tells us otherwise.
@@ -187,6 +192,7 @@ class LiveController:
 		self.is_knockout = await self._read_is_knockout()
 		self.match_number = await self._read_match_number()
 		self._double_until = await self._read_double_until()
+		await self._refresh_season_points()
 		await self._refresh_overlays()
 
 	# ----------------------------------------------------------------- lifecycle
@@ -205,6 +211,7 @@ class LiveController:
 		# Cache the double-knockout threshold so danger highlighting matches how
 		# many players the mode will actually knock out this round.
 		self._double_until = await self._read_double_until()
+		await self._refresh_season_points()
 		markers = getattr(self.app, 'markers', None)
 		if markers is not None:
 			try:
@@ -213,6 +220,23 @@ class LiveController:
 			except Exception:
 				logger.exception('Knockout: failed to log map_start marker')
 		await self._refresh_overlays()
+
+	async def _refresh_season_points(self):
+		"""Recompute the cached season totals for the active cup's series. No-ops to an
+		empty map when no cup is active. Called only on infrequent paths (map start,
+		match recorded, cup start/stop) -- never per-render, since compute_season
+		aggregates every cup/match."""
+		cup = getattr(self.app.cup, 'active_cup', None) if getattr(self.app, 'cup', None) else None
+		if not cup:
+			self.season_points = {}
+			return
+		try:
+			from .season import season_points_map
+			standings = await self.app.season.compute_season(cup.cup_key)
+			self.season_points = season_points_map(standings)
+		except Exception:
+			logger.exception('Knockout: failed to refresh season points')
+			self.season_points = {}
 
 	async def _read_double_until(self):
 		try:

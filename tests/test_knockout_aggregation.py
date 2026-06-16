@@ -67,6 +67,18 @@ def test_accumulate_season_empty():
 	assert season.accumulate_season([]) == []
 
 
+def test_season_points_map_for_hud():
+	cup1 = [_standing('alice', 10), _standing('bob', 8)]
+	cup2 = [_standing('bob', 10), _standing('alice', 8)]
+	table = season.accumulate_season([cup1, cup2])
+	points = season.season_points_map(table)
+	assert points == {'alice': 18, 'bob': 18}
+
+
+def test_season_points_map_empty():
+	assert season.season_points_map([]) == {}
+
+
 # --------------------------------------------------------------- player stats
 
 def test_accumulate_player_history_and_summary():

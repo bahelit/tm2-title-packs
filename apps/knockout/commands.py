@@ -65,9 +65,30 @@ class CupCommands:
 				.add_param(name='note', required=False, nargs='*', help='Marker note.'),
 			Command(command='hud', namespace='ko', target=self.cmd_hud, admin=True,
 				description='Diagnostic: report match HUD state and force a test render.'),
+			Command(command='on', namespace='cotd', target=self.cmd_cotd_on, admin=True,
+				description='Start a Cup of the Day (TimeAttack practice until the cutoff, then knockout).')
+				.add_param(name='time', required=False, help='Override cutoff time HH:MM (e.g. 18:30).'),
+			Command(command='off', namespace='cotd', target=self.cmd_cotd_off, admin=True,
+				description='Stop the Cup of the Day.'),
+			Command(command='start', namespace='cotd', target=self.cmd_cotd_start, admin=True,
+				description='End COTD practice now and start the knockout immediately.'),
+			Command(command='countdown', namespace='cotd', target=self.cmd_cotd_countdown, admin=True,
+				description='Set the seconds between practice closing and the knockout (e.g. 30 for testing).')
+				.add_param(name='seconds', required=True, type=int),
+			Command(command='status', namespace='cotd', target=self.cmd_cotd_status, admin=False,
+				description='Show the Cup of the Day phase and cutoff.'),
 		)
 
 	# ------------------------------------------------------------------- admin
+
+	async def _refresh_hud_season(self):
+		"""Recompute the HUD's cached season totals and repaint, so the season column
+		appears/disappears immediately when a cup is started or stopped."""
+		live = getattr(self.app, 'live', None)
+		if live is None:
+			return
+		await live._refresh_season_points()
+		await live._refresh_overlays()
 
 	async def cmd_on(self, player, data, **kwargs):
 		explicit_name = ' '.join(data.name).strip() if getattr(data, 'name', None) else None
@@ -89,12 +110,14 @@ class CupCommands:
 				'{} maps'.format(map_count) if map_count else 'open-ended')
 		)
 		await self.app.update_widget()
+		await self._refresh_hud_season()
 
 	async def cmd_off(self, player, data, **kwargs):
 		cup = await self.cup.stop_cup()
 		if cup:
 			await self.instance.chat('$ff0>>> Cup $fff{}$ff0 stopped.'.format(cup.name))
 			await self.app.hide_widget()
+			await self._refresh_hud_season()
 		else:
 			await self.instance.chat('$f00>>> No active cup.', player)
 
@@ -187,6 +210,24 @@ class CupCommands:
 			return
 		await self.instance.chat(
 			'$ff0>>> Exported cup standings to: $fff{}$ff0'.format(', '.join(paths)), player)
+
+	# --------------------------------------------------------------- cup of the day
+
+	async def cmd_cotd_on(self, player, data, **kwargs):
+		time_override = getattr(data, 'time', None) or None
+		await self.app.cotd.start(player, time_override)
+
+	async def cmd_cotd_off(self, player, data, **kwargs):
+		await self.app.cotd.stop(player)
+
+	async def cmd_cotd_start(self, player, data, **kwargs):
+		await self.app.cotd.force_start(player)
+
+	async def cmd_cotd_countdown(self, player, data, **kwargs):
+		await self.app.cotd.set_countdown(player, data.seconds)
+
+	async def cmd_cotd_status(self, player, data, **kwargs):
+		await self.app.cotd.status(player)
 
 	# ------------------------------------------------------------------ public
 

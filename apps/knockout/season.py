@@ -38,6 +38,12 @@ def accumulate_season(cup_standings):
 	return standings
 
 
+def season_points_map(standings):
+	"""Reduce season standings (as from ``accumulate_season``) to a plain
+	``{login: total_cup_points}`` map for quick HUD lookups."""
+	return {row['login']: row['total_cup_points'] for row in standings}
+
+
 def accumulate_player(login, cup_standings):
 	"""
 	Pure per-player history aggregation. ``cup_standings`` is an iterable of
@@ -88,7 +94,9 @@ class SeasonController:
 
 	async def _cups(self, cup_key=None):
 		from .models import CupInfo
-		query = CupInfo.select()
+		# Only cups stamped to count feed the season leaderboard (see the global
+		# save_to_season setting). Cup-local results are unaffected by this filter.
+		query = CupInfo.select().where(CupInfo.count_in_season == True)
 		if cup_key:
 			query = query.where(CupInfo.cup_key == cup_key)
 		return list(await CupInfo.execute(query.order_by(CupInfo.id)))

@@ -29,5 +29,9 @@ class CupInfo(TimedModel):
 	is_active = BooleanField(null=False, default=False, index=True)
 	"""Whether this cup is currently collecting results."""
 
+	count_in_season = BooleanField(null=False, default=True)
+	"""Whether this cup feeds the season leaderboard. Stamped at creation from the
+	global ``save_to_season`` setting so season computation stays deterministic."""
+
 	class Meta:
 		db_table = 'knockout_cup'

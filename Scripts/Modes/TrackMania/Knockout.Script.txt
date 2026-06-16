@@ -25,6 +25,7 @@
 #Setting S_AdminSetPause		False	as "<hidden>" ///< Allows event admin to pause match before next round
 #Setting S_ShowMultilapInfo		True	as "<hidden>" ///< Laps info visible if laps count > 0
 #Setting S_CustomLayerPath		""		as "<hidden>" ///< Try to load custom layer from an XML file
+#Setting S_PreShieldLogins		""		as "<hidden>" ///< Logins (comma/space separated) granted a shield at match start (e.g. COTD fastest)
 // Change default values
 #Setting S_ForceLapsNb		0
 #Setting S_FinishTimeout	20
@@ -821,10 +822,16 @@ Void XmlRpc_KOShieldUsed(CTmPlayer _Player) {
 Void StartKnockout() {
 	G_PlayersRacing.clear();
 	G_RoundsPlayed = 0;
+	// Logins pre-granted a shield this match (e.g. the COTD fastest-practice time).
+	declare Text[] PreShieldLogins = TL::Split(", ", S_PreShieldLogins);
 	foreach (Player in Players) {
 	 	G_PlayersRacing.add(Player.User.Login);
 	 	declare Integer ShieldTokens for Player;
 	 	ShieldTokens = 0;
+	 	if (S_EnableShields && PreShieldLogins.exists(Player.User.Login)) {
+	 		ShieldTokens = 1;
+	 		XmlRpc_KOShieldAwarded(Player);
+	 	}
 	 	XmlRpc_KOPlayerAdded(Player);
 	}
 }

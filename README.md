@@ -121,10 +121,23 @@ These are controlled by settings in PyPlanet:
 | `show_knockout` | `true` | Knockout notifications |
 | `show_winner` | `true` | Winner notifications |
 | `show_match_hud` | `true` | Always-on left-side match HUD (match/round/players/KOs header + gap-to-leader order) shown to everyone |
+| `show_season_points` | `true` | Show each racer's running season total (active cup's series) as a PTS column on the match HUD; only appears while a cup is active |
 | `show_overlays` | `false` | Broadcast overlays: players-remaining ticker + elimination lower-third |
 | `show_cup_widget` | `false` | Live cup standings widget during an active cup (experimental) |
+| `save_to_season` | `true` | When off, cups started from now on are excluded from the season leaderboard (their own results still record) |
+| `cotd_cutoff_time` | `"17:00"` | Local `HH:MM` when Bowl of the Evening practice ends and the knockout begins |
+| `cotd_fastest_shield` | `true` | Grant the fastest practice time a one-time shield (save) in the knockout |
+| `cotd_countdown_seconds` | `900` | Seconds between practice closing and the knockout starting (default 15 min); set live with `//cotd countdown <seconds>` |
 | `vod_markers_enabled` | `false` | Append timestamped highlight markers to a file |
 | `vod_markers_path` | `""` | Path to the VOD markers file (blank = disabled) |
+
+> **Server timezone:** Bowl of the Evening timing uses the dedicated server's local clock (`cotd_cutoff_time`
+> is interpreted in server-local time), since the game mode itself has no wall-clock access.
+
+> **Existing databases:** the `save_to_season` toggle adds a `count_in_season` column to the
+> `knockout_cup` table. PyPlanet auto-creates new *tables* but not new *columns*, so on a
+> pre-existing database run `ALTER TABLE knockout_cup ADD COLUMN count_in_season INTEGER NOT NULL
+> DEFAULT 1;` once (fresh installs need nothing).
 
 ### Match HUD
 
@@ -183,6 +196,7 @@ For livestreamed nights, the app adds spectator-facing extras (all opt-in):
 | `S_AdminSetPause` | `false` | Allow admins to pause match before next round |
 | `S_ShowMultilapInfo` | `true` | Show multi-lap info on screen |
 | `S_CustomLayerPath` | `""` | Optional path to custom background layer XML |
+| `S_PreShieldLogins` | `""` | Logins (comma/space separated) granted a shield at match start; set automatically by the Bowl of the Evening handoff for the fastest-practice player. Requires `S_EnableShields`. |
 
 ### Troubleshooting
 
@@ -225,6 +239,10 @@ Admin (`//`):
 | `//cup edit <index>` | Toggle whether the map at that index counts towards totals. |
 | `//cup export` | Write CSV + Discord-markdown files of the standings. |
 | `//cup pay [payout]` | Pay planets to the standings (requires `cup_payouts_enabled`). |
+| `//cotd on [HH:MM]` | Start a Bowl of the Evening (TimeAttack practice until the cutoff, then knockout). Optional time overrides `cotd_cutoff_time` for this run. |
+| `//cotd off` | Stop the Bowl of the Evening. |
+| `//cotd start` | End practice now and start the knockout immediately. |
+| `//cotd countdown <seconds>` | Set the countdown between practice closing and the knockout (e.g. `30` for testing, default 900 = 15 min). |
 | `//ko streamstart` | Mark t=0 for VOD highlight markers (stream-relative clock). |
 | `//ko mark <note>` | Write a manual VOD highlight marker. |
 
@@ -237,6 +255,7 @@ Public (`/`):
 | `/cup matches` | List the maps played in the cup. |
 | `/cup season [key]` | Open the season leaderboard across all cups (optionally one cup key). |
 | `/cup stats <login>` | Open a player's cup history (cups, wins, podiums, places). |
+| `/cotd status` | Show the Bowl of the Evening phase, cutoff time, and current fastest practice time. |
 
 ### Score modes
 
@@ -279,3 +298,35 @@ definition; `//cup setup knockout_rotate` applies that preset's script/settings.
 4. Play through the maps; `/cup results` shows running standings.
 5. The cup auto-completes at `mapcount` (or `//cup off`); `//cup export` saves the
    results, and `//cup pay` distributes planets if enabled.
+
+## Bowl of the Evening
+
+A daily one-map event modelled on TM2020's Cup of the Day, scaled for a single server (no
+seeded divisions). The day's map runs as open **TimeAttack practice** so everyone can grind
+their best time; at a fixed local time (default **17:00**) the app automatically switches the
+*same map* into Knockout and runs it down to a single winner. Because the game mode has no
+wall-clock access, the app owns the clock and drives the handoff.
+
+It records as a one-map cup with `cup_key = cotd`, so each evening becomes an edition and the
+season views (`/cup season cotd`, `/cup stats <login>`) become your running Bowl leaderboard.
+
+> The commands and settings keep the short `cotd` prefix (`//cotd …`, `cotd_*`).
+
+**Flow**
+
+1. Pick the day's map (set the matchsettings / current map as usual).
+2. `//cotd on` (optionally `//cotd on 18:30` to override the cutoff for one run). The server
+   loads TimeAttack and practice begins; the app tracks each player's best practice time.
+3. At `cotd_cutoff_time` practice closes and a **15-minute countdown** begins (configurable via
+   `cotd_countdown_seconds` / `//cotd countdown <seconds>` — set `30` for quick testing). The
+   countdown re-announces as it ticks down, then the app switches the same map into Knockout. If
+   `cotd_fastest_shield` is on, the fastest practice time is granted a one-time shield (via
+   `S_PreShieldLogins`) so a hot lap earns one save in the knockout.
+4. The knockout plays to a winner; the result records into the `cotd` cup and auto-completes
+   it (and feeds the season leaderboard unless `save_to_season` is off).
+5. `//cotd start` ends practice and skips the countdown to start the knockout immediately;
+   `//cotd off` cancels.
+
+**Settings:** `cotd_cutoff_time` (default `"17:00"`), `cotd_countdown_seconds` (default `900`),
+and `cotd_fastest_shield` (default `true`). The cutoff is interpreted in the dedicated server's
+local timezone.

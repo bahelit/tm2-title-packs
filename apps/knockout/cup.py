@@ -38,6 +38,14 @@ class CupController:
 		))
 		edition = (previous[0].edition + 1) if previous else 1
 
+		# Stamp whether this cup feeds the season leaderboard from the global toggle,
+		# so historical season computation stays deterministic regardless of later
+		# changes to the setting.
+		try:
+			count_in_season = await self.app.setting_save_to_season.get_value()
+		except Exception:
+			count_in_season = True
+
 		cup = CupInfo(
 			cup_key=cup_key,
 			name=name or cup_key,
@@ -46,6 +54,7 @@ class CupController:
 			score_mode=score_mode,
 			mode_script=mode_script,
 			is_active=True,
+			count_in_season=count_in_season,
 		)
 		await cup.save()
 		self.active_cup = cup

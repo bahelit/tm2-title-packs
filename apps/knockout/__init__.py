@@ -5,6 +5,7 @@ from pyplanet.apps.core.maniaplanet import callbacks as mp_signals
 
 from .capture import CaptureController
 from .cup import CupController
+from .cotd import CotdController
 from .commands import CupCommands
 from .results import ResultsController
 from .season import SeasonController
@@ -148,6 +149,48 @@ class KnockoutConfig(AppConfig):
 			description='Path to the VOD highlight markers file (blank = disabled)',
 			default='',
 		)
+		self.setting_show_season_points = Setting(
+			'show_season_points',
+			'Show Season Points on HUD',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Show each racer\'s running season total (active cup series) on the match HUD',
+			default=True,
+			change_target=self._on_display_setting_changed,
+		)
+		self.setting_save_to_season = Setting(
+			'save_to_season',
+			'Save Results to Season Leaderboard',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='When off, cups started from now on are excluded from the season leaderboard',
+			default=True,
+		)
+		self.setting_cotd_cutoff_time = Setting(
+			'cotd_cutoff_time',
+			'Cup of the Day Start Time',
+			Setting.CAT_BEHAVIOUR,
+			type=str,
+			description='Local HH:MM when COTD practice ends and the knockout begins (default 17:00)',
+			default='17:00',
+		)
+		self.setting_cotd_fastest_shield = Setting(
+			'cotd_fastest_shield',
+			'COTD Fastest-Practice Shield',
+			Setting.CAT_BEHAVIOUR,
+			type=bool,
+			description='Grant the fastest COTD practice time a one-time shield (save) in the knockout',
+			default=True,
+		)
+		self.setting_cotd_countdown_seconds = Setting(
+			'cotd_countdown_seconds',
+			'COTD Countdown Seconds',
+			Setting.CAT_BEHAVIOUR,
+			type=int,
+			description='Seconds between practice closing and the knockout starting (default 900 = 15 min). '
+				'Settable live with //cotd countdown <seconds> (e.g. 30 for testing)',
+			default=900,
+		)
 
 	async def on_init(self):
 		await self.context.setting.register(
@@ -164,6 +207,11 @@ class KnockoutConfig(AppConfig):
 			self.setting_show_match_hud,
 			self.setting_vod_markers_enabled,
 			self.setting_vod_markers_path,
+			self.setting_show_season_points,
+			self.setting_save_to_season,
+			self.setting_cotd_cutoff_time,
+			self.setting_cotd_fastest_shield,
+			self.setting_cotd_countdown_seconds,
 		)
 
 	async def on_start(self):
@@ -209,6 +257,11 @@ class KnockoutConfig(AppConfig):
 		self.commands = CupCommands(self)
 		await self.commands.on_start()
 
+		# Cup of the Day: daily TimeAttack practice -> Knockout handoff (app-driven
+		# clock). Constructed after commands since it uses commands._refresh_hud_season.
+		self.cotd = CotdController(self)
+		await self.cotd.on_start()
+
 		# Optional live standings widget.
 		self._show_widget = await self.setting_show_cup_widget.get_value()
 		self.widget = CupWidget(self)
@@ -219,6 +272,11 @@ class KnockoutConfig(AppConfig):
 		"""Called by capture after a finished map's standings are persisted."""
 		await self.cup.on_match_recorded(map_start_time, standings)
 		await self.update_widget()
+		# Season totals changed -> refresh the cache and repaint the HUD column.
+		live = getattr(self, 'live', None)
+		if live is not None:
+			await live._refresh_season_points()
+			await live._refresh_overlays()
 
 	async def on_cup_complete(self, cup):
 		"""Called by the cup controller when a cup reaches its map count."""
